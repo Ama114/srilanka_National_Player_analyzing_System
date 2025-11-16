@@ -3,37 +3,35 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
-import joblib
+import joblib 
 
 print("Starting model training process...")
+
+import pandas as pd
 
 # 1. දත්ත කියවීම සහ පිරිසිදු කිරීම (Load and Clean Data)
 try:
     # --- මෙතන තමයි අවසාන fix එක තියෙන්නේ ---
-    # මුලින්ම file එක single column එකක් විදියට කියවනවා
-    df_raw = pd.read_csv('srilanka player 11 dataset.csv', header=None)
-    
-    # ඒ column එක comma (,) එකෙන් split කරලා, අලුත් columns හදනවා
-    df = df_raw[0].str.split(',', expand=True)
-    
-    # පළවෙනි row එක header එක විදියට සකසනවා
-    df.columns = df.iloc[0]
-    df = df[1:]
-    
+    # මුලින්ම file එක කෙලින්ම කියවනවා, header එක automate කරනවා
+    df = pd.read_csv('srilanka player 11 dataset.csv', encoding='latin1')
+
     # Column නම් වල තියෙන අනවශ්‍ය quotes (") අයින් කරනවා
     df.columns = df.columns.str.replace('"', '').str.strip()
-    
+
     # අනවශ්‍ය columns අයින් කිරීම සහ දත්ත පිරිසිදු කිරීම
     df.drop(columns=['Role'], inplace=True, errors='ignore')
     df.fillna(0, inplace=True)
-    
+
+    # Debugging: Print column names to check for issues
+    print("Current DataFrame columns:", df.columns.tolist())
+
     # දත්ත වල type එක numeric වලට හරවනවා
     numeric_cols = ['Runs', 'Balls_Faced', 'Strike_Rate', 'Wickets_Taken', 'Overs_Bowled', 'Runs_Conceded']
     for col in numeric_cols:
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
     print("Dataset loaded and cleaned successfully.")
-    # print(df.columns.tolist()) # You can uncomment this to check the final column names
+    
 
 except FileNotFoundError:
     print("Error: 'srilanka player 11 dataset.csv' not found.")
@@ -42,7 +40,8 @@ except Exception as e:
     print(f"An error occurred during data loading: {e}")
     exit()
 
-# 2. Performance Score එක හැදීම (Feature Engineering)
+
+    # 2. Performance Score එක හැදීම (Feature Engineering)
 def calculate_performance(row):
     try:
         if row['Player_Type'] == 'Batsman':
@@ -56,6 +55,7 @@ def calculate_performance(row):
 
 df['Performance_Score'] = df.apply(calculate_performance, axis=1)
 print("Performance Score calculated for each player.")
+
 
 # 3. Model එකට අවශ්‍ය දත්ත සකස් කිරීම
 # දැන් column නම් හරියටම තියෙන නිසා මේක වැඩ කරනවා
@@ -79,6 +79,8 @@ model = Pipeline(steps=[
 model.fit(X, y)
 print("Model training completed successfully.")
 
-# 5. Train කරපු Model එක Save කිරීම
+
 joblib.dump(model, 'best_xi_model.joblib')
 print("Model saved as 'best_xi_model.joblib'. You can now use it in app.py!")
+
+
