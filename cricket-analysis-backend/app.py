@@ -24,9 +24,7 @@ app = Flask(__name__)
 CORS(app)
 
 # Database Config
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv(
-    'DATABASE_URL', 'mysql+pymysql://root:admin123@localhost/cricket_analysis'
-)
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Initialize DB with App
