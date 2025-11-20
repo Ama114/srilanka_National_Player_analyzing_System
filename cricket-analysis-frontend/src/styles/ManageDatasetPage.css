@@ -1,0 +1,173 @@
+.manage-dataset-container {
+  padding: 100px 20px 40px 20px;
+  min-height: 100vh;
+  background-color: #f0f2f5;
+}
+
+.manage-dataset-header {
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+.manage-dataset-header h1 {
+  color: #0A2351;
+  margin-bottom: 10px;
+}
+
+.manage-dataset-header .subtitle {
+  color: #555;
+  font-size: 1.2em;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+/* Dataset Manager Styles */
+.dataset-manager {
+  max-width: 1100px;
+  margin: 0 auto;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.12);
+  padding: 30px;
+  text-align: left;
+}
+
+.dataset-content {
+  display: flex;
+  justify-content: center;
+}
+
+.dataset-form {
+  width: 100%;
+  max-width: 900px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  background: #f8fafc;
+  padding: 25px;
+  border-radius: 14px;
+}
+
+.dataset-form h3 {
+  margin: 0;
+  color: #0b3d91;
+}
+
+.form-row-group {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 15px;
+}
+
+.form-row-group label {
+  display: flex;
+  flex-direction: column;
+  font-weight: 600;
+  color: #1e293b;
+  font-size: 0.95rem;
+  gap: 6px;
+}
+
+.form-row-group input,
+.form-row-group select {
+  border: 1px solid #d7dde8;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 1rem;
+}
+
+.form-row-group input:focus,
+.form-row-group select:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.form-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.form-actions button,
+.ghost-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 10px 18px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.form-actions button[type="submit"] {
+  background: #1d4ed8;
+  color: #fff;
+}
+
+.form-actions button[type="submit"]:hover {
+  background: #1e40af;
+}
+
+.ghost-btn {
+  background: #e0e7ff;
+  color: #1d4ed8;
+}
+
+.ghost-btn:hover {
+  background: #c7d2fe;
+}
+
+.ghost-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.condition-status {
+  padding: 10px 15px;
+  border-radius: 8px;
+  font-weight: 600;
+  margin-top: 10px;
+}
+
+.condition-status.exists {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.condition-status.not-exists {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.pool-feedback {
+  margin-top: 6px;
+  font-weight: 600;
+}
+
+.pool-feedback.success {
+  color: #15803d;
+}
+
+.pool-feedback.error {
+  color: #b91c1c;
+}
+
+.pool-feedback.info {
+  color: #2563eb;
+}
+
+@media (max-width: 900px) {
+  .form-row-group {
+    grid-template-columns: 1fr;
+  }
+  
+  .form-actions {
+    flex-direction: column;
+  }
+  
+  .form-actions button {
+    width: 100%;
+  }
+}
+

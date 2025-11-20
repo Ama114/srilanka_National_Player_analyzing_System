@@ -1,0 +1,51 @@
+.featured-players-section {
+  width: 100%;
+  padding: 60px 20px;
+  background-color: #ffffff; /* White background */
+  text-align: center;
+}
+
+.featured-players-section h2 {
+  font-size: 2.5em;
+  margin-bottom: 40px;
+  color: #0A2351; /* Dark Blue */
+}
+
+.player-cards-container {
+  display: flex;
+  justify-content: center;
+  gap: 30px;
+  flex-wrap: wrap; /* சின்ன screens වලට adjust වෙන්න */
+}
+
+.player-card {
+  background-color: #f8f9fa;
+  border-radius: 15px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  overflow: hidden; /* Image එක card එකෙන් එලියට පනින එක නවත්තන්න */
+  width: 280px;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.player-card:hover {
+  transform: translateY(-10px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+}
+
+.player-image {
+  width: 100%;
+  height: 250px;
+  object-fit: cover; /* Image එකේ aspect ratio එක maintain කරන්න */
+}
+
+.player-card h3 {
+  margin: 15px 0 5px 0;
+  font-size: 1.5em;
+  color: #333;
+}
+
+.player-card p {
+  margin: 0 0 20px 0;
+  font-size: 1.1em;
+  color: #007bff; /* Blue */
+}

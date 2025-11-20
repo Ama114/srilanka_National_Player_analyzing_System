@@ -1,0 +1,25 @@
+.quick-stats-section {
+  display: flex;
+  justify-content: space-around;
+  background-color: #0A2351; /* Dark Blue */
+  color: white;
+  padding: 40px 20px;
+  width: 100%;
+}
+
+.stat-card {
+  text-align: center;
+}
+
+.stat-number {
+  font-size: 3em;
+  font-weight: bold;
+  color: #ffc107; /* Yellow */
+  display: block;
+}
+
+.stat-label {
+  font-size: 1.2em;
+  margin-top: 5px;
+  color: #f0f2f5;
+}
