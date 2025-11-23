@@ -4,13 +4,24 @@ import '../styles/BestXISelectionPage.css';
 
 function BestXISelectionPage() {
   const [oppositions, setOppositions] = useState([]);
-  const [pitchTypes, setPitchTypes] = useState(['Batting Friendly', 'Bowling Friendly', 'Spin Friendly', 'Balanced']);
+  const [pitchTypes] = useState(['Batting Friendly', 'Bowling Friendly', 'Spin Friendly', 'Balanced']);
+  const [weatherTypes, setWeatherTypes] = useState([]);
+  const [matchTypes] = useState(['ODI', 'T20', 'Test']);
   const [playerPool, setPlayerPool] = useState([]);
 
   const ROLE_OPTIONS = ['Batsman', 'Bowler', 'All-Rounder', 'Wicket Keeper'];
 
-  const [selectedOpposition, setSelectedOpposition] = useState('');
-  const [selectedPitch, setSelectedPitch] = useState('');
+  const [selectedOpposition, setSelectedOpposition] = useState('Bangladesh');
+  const [selectedPitch, setSelectedPitch] = useState('Balanced');
+  const [selectedWeather, setSelectedWeather] = useState('Balanced');
+  const [selectedMatchType, setSelectedMatchType] = useState('ODI');
+  const [autoGenerateTriggered, setAutoGenerateTriggered] = useState(false);
+  
+  // Default example values for dropdowns
+  const DEFAULT_OPPOSITION = 'Bangladesh';
+  const DEFAULT_PITCH = 'Balanced';
+  const DEFAULT_WEATHER = 'Balanced';
+  const DEFAULT_MATCH_TYPE = 'ODI';
   const [playerForm, setPlayerForm] = useState({ player_name: '', player_type: '', role: '' });
   const [editingPlayerId, setEditingPlayerId] = useState(null);
   const [editingPlayerOriginalName, setEditingPlayerOriginalName] = useState('');
@@ -23,12 +34,46 @@ function BestXISelectionPage() {
   const [suggestedTeam, setSuggestedTeam] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [generatedTeams, setGeneratedTeams] = useState([]);
+  const [loadingTeams, setLoadingTeams] = useState(false);
   
   const API_BASE_URL = 'http://127.0.0.1:5000/api';
+
+  const loadGeneratedTeams = React.useCallback(() => {
+    // Load the most recent team automatically only if no team is currently displayed
+    setLoadingTeams(true);
+    axios.get(`${API_BASE_URL}/best-xi/generated-teams`)
+      .then(res => {
+        setGeneratedTeams(res.data);
+        setSuggestedTeam(prev => {
+          if (prev.length === 0 && res.data.length > 0) {
+            const latestTeam = res.data[0];
+            // Set dropdown values from the loaded team only if they exist
+            if (latestTeam.opposition) setSelectedOpposition(latestTeam.opposition);
+            if (latestTeam.pitch_type) setSelectedPitch(latestTeam.pitch_type);
+            if (latestTeam.weather) setSelectedWeather(latestTeam.weather);
+            if (latestTeam.match_type) setSelectedMatchType(latestTeam.match_type);
+            setTeamNotice(`Loaded previously generated team: ${latestTeam.team_name}`);
+            setAutoGenerateTriggered(true); // Prevent auto-generate if we loaded a previous team
+            return latestTeam.players || [];
+          }
+          // Keep existing default values, don't overwrite if no previous team
+          return prev;
+        });
+      })
+      .catch(err => {
+        console.error("Error loading generated teams:", err);
+        // On error, keep existing values - don't overwrite
+      })
+      .finally(() => {
+        setLoadingTeams(false);
+      });
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
     fetchPlayerPool();
+    loadGeneratedTeams();
     
     // Load oppositions with error handling
     axios.get(`${API_BASE_URL}/ml/oppositions`)
@@ -45,12 +90,27 @@ function BestXISelectionPage() {
         }
       });
     
+    // Load weather types
+    axios.get(`${API_BASE_URL}/ml/weather-types`)
+      .then(res => {
+        if (isMounted) {
+          setWeatherTypes(res.data);
+        }
+      })
+      .catch(err => {
+        console.error("Error loading weather types:", err);
+        // Set default weather types if API fails
+        if (isMounted) {
+          setWeatherTypes(['Balanced', 'Cloudy', 'Dry', 'Hot', 'Rainy']);
+        }
+      });
+    
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [loadGeneratedTeams]);
 
-  const buildTeamWithFallbacks = (team) => {
+  const buildTeamWithFallbacks = React.useCallback((team) => {
     const uniqueTeam = [];
     const seenNames = new Set();
 
@@ -80,9 +140,9 @@ function BestXISelectionPage() {
       : 'Filled remaining slots with available players from the pool.';
 
     return { team: uniqueTeam.concat(fallbackPlayers), notice };
-  };
+  }, [playerPool]);
 
-  const applyTeamWithFallbacks = (team, options = {}) => {
+  const applyTeamWithFallbacks = React.useCallback((team, options = {}) => {
     const { defaultNotice = '', forceNotice = false } = options;
     const { team: fullTeam, notice } = buildTeamWithFallbacks(team);
 
@@ -95,7 +155,100 @@ function BestXISelectionPage() {
     }
 
     return fullTeam;
-  };
+  }, [buildTeamWithFallbacks]);
+
+  const handleSuggestTeam = React.useCallback(() => {
+    if (!selectedOpposition || !selectedPitch || !selectedWeather || !selectedMatchType) {
+      setError('Please select opposition, pitch type, weather, and match type.');
+      return;
+    }
+    setError('');
+    setIsLoading(true);
+    setTeamNotice('');
+    setSuggestedTeam([]);
+
+    const params = {
+      opposition: selectedOpposition,
+      pitch: selectedPitch,
+      weather: selectedWeather,
+      match_type: selectedMatchType
+    };
+    
+    axios.get(`${API_BASE_URL}/suggest-best-xi`, { params })
+      .then(response => {
+        if (!response.data || !Array.isArray(response.data)) {
+          setError('Invalid response from server. Please try again.');
+          setIsLoading(false);
+          return;
+        }
+
+        if (response.data.length === 0) {
+          setError('No players found. Please check the dataset.');
+          setIsLoading(false);
+          return;
+        }
+
+        const enrichedTeam = response.data.map(player => {
+          const poolPlayer = playerPool.find(p => p.player_name === player.name);
+          return {
+            id: poolPlayer?.id || null,
+            name: player.name || player.Player_Name || 'Unknown',
+            role: player.role || player.Role || 'Player'
+          };
+        });
+        
+        setSuggestedTeam(applyTeamWithFallbacks(enrichedTeam));
+        setError(''); // Clear any previous errors
+        
+        // Show success message
+        if (enrichedTeam.length === 11) {
+          setTeamNotice(`Successfully generated Best XI for ${selectedMatchType} match against ${selectedOpposition} on ${selectedPitch} pitch (${selectedWeather} weather).`);
+        }
+        
+        // Reload generated teams list
+        loadGeneratedTeams();
+      })
+      .catch(err => {
+        console.error("Error fetching team suggestion:", err);
+        setSuggestedTeam([]);
+        
+        if (err.response?.data?.error) {
+          setError(`Error: ${err.response.data.error}`);
+        } else if (err.message === 'Network Error' || err.code === 'ERR_NETWORK') {
+          setError("Cannot connect to backend server. Please make sure Flask backend is running on port 5000.");
+        } else {
+          setError("Could not suggest a team. Please check the backend server and try again.");
+        }
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
+  }, [selectedOpposition, selectedPitch, selectedWeather, selectedMatchType, playerPool, loadGeneratedTeams, applyTeamWithFallbacks]);
+
+  // Auto-generate team when all values are set and data is loaded
+  useEffect(() => {
+    // Only auto-generate if:
+    // 1. Not already triggered
+    // 2. All dropdowns have values
+    // 3. Oppositions and weather types are loaded
+    // 4. No previous team was loaded
+    if (!autoGenerateTriggered && 
+        selectedOpposition && 
+        selectedPitch && 
+        selectedWeather && 
+        selectedMatchType &&
+        oppositions.length > 0 &&
+        weatherTypes.length > 0 &&
+        suggestedTeam.length === 0 &&
+        !isLoading &&
+        !loadingTeams) {
+      setAutoGenerateTriggered(true);
+      // Small delay to ensure everything is ready
+      setTimeout(() => {
+        handleSuggestTeam();
+      }, 500);
+    }
+  }, [selectedOpposition, selectedPitch, selectedWeather, selectedMatchType, oppositions.length, weatherTypes.length, suggestedTeam.length, isLoading, loadingTeams, autoGenerateTriggered, handleSuggestTeam]);
 
   const fetchPlayerPool = () => {
     setPoolLoading(true);
@@ -122,7 +275,7 @@ function BestXISelectionPage() {
         })
       )
     );
-  }, [playerPool]);
+  }, [playerPool, applyTeamWithFallbacks]);
 
   const scrollToPlayerForm = () => {
     if (playerFormRef.current) {
@@ -261,47 +414,6 @@ function BestXISelectionPage() {
     });
   };
 
-  const handleSuggestTeam = () => {
-    if (!selectedOpposition || !selectedPitch) {
-      setError('Please select both opposition and pitch.');
-      return;
-    }
-    setError('');
-    setIsLoading(true);
-    setTeamNotice('');
-    setSuggestedTeam([]);
-
-    const params = {
-      opposition: selectedOpposition,
-      pitch: selectedPitch
-    };
-    
-    axios.get(`${API_BASE_URL}/suggest-best-xi`, { params })
-      .then(response => {
-        const enrichedTeam = response.data.map(player => {
-          const poolPlayer = playerPool.find(p => p.player_name === player.name);
-          return {
-            id: poolPlayer?.id || null,
-            name: player.name,
-            role: player.role
-          };
-        });
-        setSuggestedTeam(applyTeamWithFallbacks(enrichedTeam));
-        setError(''); // Clear any previous errors
-      })
-      .catch(err => {
-        console.error("Error fetching team suggestion:", err);
-        if (err.message === 'Network Error' || err.code === 'ERR_NETWORK') {
-          setError("Cannot connect to backend server. Please make sure Flask backend is running on port 5000.");
-        } else {
-          setError("Could not suggest a team. Please check the backend server.");
-        }
-      })
-      .finally(() => {
-        setIsLoading(false);
-      });
-  };
-
   // Role එකට ගැලපෙන class එකක් return කරන function එක
   const getRoleClassName = (role) => {
     if (role === 'Wicket Keeper') return 'role-wk';
@@ -316,10 +428,37 @@ function BestXISelectionPage() {
       <h1>Best XI Suggestion Team</h1>
       <p className="subtitle">Select the conditions to get a predicted best playing XI</p>
       
+
+      {!suggestedTeam.length && !isLoading && (
+        <div className="instruction-box">
+          <h3>📋 How to Use:</h3>
+          <ol>
+            <li>Select <strong>Opposition</strong> team (e.g., Bangladesh, India, Australia)</li>
+            <li>Select <strong>Pitch Type</strong> (Batting Friendly, Bowling Friendly, Spin Friendly, or Balanced)</li>
+            <li>Select <strong>Weather</strong> condition (Balanced, Cloudy, Dry, Hot, or Rainy)</li>
+            <li>Select <strong>Match Type</strong> (ODI, T20, or Test)</li>
+            <li>Click <strong>"Suggest Best XI"</strong> button to generate the team</li>
+            <li>Or click on a <strong>Previously Generated Team</strong> above to load it</li>
+          </ol>
+        </div>
+      )}
+      
       <div className="condition-selector">
-        {/* ... (Dropdowns and button have no changes) ... */}
-        <select value={selectedOpposition} onChange={(e) => setSelectedOpposition(e.target.value)}><option value="" disabled>Select Opposition</option>{oppositions.map(opp => <option key={opp} value={opp}>{opp}</option>)}</select>
-        <select value={selectedPitch} onChange={(e) => setSelectedPitch(e.target.value)}><option value="" disabled>Select Pitch Type</option>{pitchTypes.map(pt => <option key={pt} value={pt}>{pt}</option>)}</select>
+        <select value={selectedOpposition} onChange={(e) => setSelectedOpposition(e.target.value)}>
+          <option value="" disabled>Select Opposition</option>
+          {oppositions.map(opp => <option key={opp} value={opp}>{opp}</option>)}
+        </select>
+        <select value={selectedPitch} onChange={(e) => setSelectedPitch(e.target.value)}>
+          <option value="" disabled>Select Pitch Type</option>
+          {pitchTypes.map(pt => <option key={pt} value={pt}>{pt}</option>)}
+        </select>
+        <select value={selectedWeather} onChange={(e) => setSelectedWeather(e.target.value)}>
+          <option value="" disabled>Select Weather</option>
+          {weatherTypes.map(wt => <option key={wt} value={wt}>{wt}</option>)}
+        </select>
+        <select value={selectedMatchType} onChange={(e) => setSelectedMatchType(e.target.value)}>
+          {matchTypes.map(mt => <option key={mt} value={mt}>{mt}</option>)}
+        </select>
         <button onClick={handleSuggestTeam} disabled={isLoading}>{isLoading ? 'Analyzing...' : 'Suggest Best XI'}</button>
       </div>
 

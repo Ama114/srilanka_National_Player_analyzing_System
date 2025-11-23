@@ -1,8 +1,9 @@
 from flask import Blueprint, jsonify, request
-from models import db, BestXIPlayer
+from models import db, BestXIPlayer, GeneratedBestXITeam
 from sqlalchemy.exc import SQLAlchemyError
 import data_loader
 import pandas as pd
+import json
 
 best_xi_bp = Blueprint('best_xi', __name__)
 
@@ -83,14 +84,46 @@ def delete_best_xi_player(player_id):
         db.session.rollback()
         return jsonify({"error": str(err)}), 500
 
+# --- Generated Teams Management ---
+@best_xi_bp.route('/api/best-xi/generated-teams', methods=['GET'])
+def list_generated_teams():
+    """Get all generated teams, ordered by most recent first"""
+    try:
+        teams = GeneratedBestXITeam.query.order_by(GeneratedBestXITeam.created_at.desc()).limit(10).all()
+        return jsonify([team.to_dict() for team in teams]), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@best_xi_bp.route('/api/best-xi/generated-teams/<int:team_id>', methods=['GET'])
+def get_generated_team(team_id):
+    """Get a specific generated team"""
+    try:
+        team = GeneratedBestXITeam.query.get_or_404(team_id)
+        return jsonify(team.to_dict()), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@best_xi_bp.route('/api/best-xi/generated-teams/<int:team_id>', methods=['DELETE'])
+def delete_generated_team(team_id):
+    """Delete a generated team"""
+    try:
+        team = GeneratedBestXITeam.query.get_or_404(team_id)
+        db.session.delete(team)
+        db.session.commit()
+        return jsonify({"message": "Team deleted successfully"}), 200
+    except SQLAlchemyError as err:
+        db.session.rollback()
+        return jsonify({"error": str(err)}), 500
+
 # --- Prediction Logic ---
 @best_xi_bp.route('/api/suggest-best-xi', methods=['GET'])
 def suggest_best_xi():
     opposition = request.args.get('opposition')
     pitch = request.args.get('pitch')
     weather = request.args.get('weather') or data_loader.default_weather
+    match_type = request.args.get('match_type', 'ODI')  # Default to ODI if not provided
 
-    if not all([opposition, pitch, data_loader.model]):
+    if not all([opposition, pitch, weather, data_loader.model]):
         return jsonify({"error": "Missing parameters or model not loaded"}), 400
 
     if data_loader.df_players_ml.empty:
@@ -144,4 +177,37 @@ def suggest_best_xi():
             final_team.append(p)
             team_names.add(p['name'])
 
-    return jsonify(final_team)
+    # Ensure we return exactly 11 players (or as many as available)
+    if len(final_team) < 11:
+        print(f"Warning: Only {len(final_team)} players selected. Need 11.")
+        # Try to add more from remaining predictions
+        remaining = [p for p in predictions if p['name'] not in team_names]
+        for p in remaining:
+            if len(final_team) >= 11: break
+            final_team.append(p)
+            team_names.add(p['name'])
+
+    # Format response - only include name and role
+    formatted_team = [{'name': p['name'], 'role': p['role']} for p in final_team]
+    
+    # Save generated team to database
+    try:
+        team_name = f"{opposition} vs {match_type} - {pitch} Pitch ({weather})"
+        generated_team = GeneratedBestXITeam(
+            team_name=team_name,
+            opposition=opposition,
+            pitch_type=pitch,
+            weather=weather,
+            match_type=match_type,
+            players_json=json.dumps(formatted_team)
+        )
+        db.session.add(generated_team)
+        db.session.commit()
+        print(f"Saved generated team to database: {team_name}")
+    except Exception as e:
+        print(f"Error saving team to database: {e}")
+        db.session.rollback()
+    
+    print(f"Generated Best XI: {len(formatted_team)} players for {opposition} on {pitch} pitch ({weather} weather, {match_type} match)")
+    
+    return jsonify(formatted_team)

@@ -62,6 +62,31 @@ class PlayerPerformanceRecord(db.Model):
             "Weather": self.weather
         }
 
+class GeneratedBestXITeam(db.Model):
+    __tablename__ = 'generated_best_xi_teams'
+
+    id = db.Column(db.Integer, primary_key=True)
+    team_name = db.Column(db.String(200))  # e.g., "Bangladesh vs ODI - Balanced Pitch"
+    opposition = db.Column(db.String(100), nullable=False)
+    pitch_type = db.Column(db.String(50), nullable=False)
+    weather = db.Column(db.String(50), nullable=False)
+    match_type = db.Column(db.String(20), nullable=False, default='ODI')
+    players_json = db.Column(db.Text, nullable=False)  # JSON string of players array
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+
+    def to_dict(self):
+        import json
+        return {
+            "id": self.id,
+            "team_name": self.team_name,
+            "opposition": self.opposition,
+            "pitch_type": self.pitch_type,
+            "weather": self.weather,
+            "match_type": self.match_type,
+            "players": json.loads(self.players_json) if self.players_json else [],
+            "created_at": self.created_at.isoformat() if self.created_at else None
+        }
+
 def seed_database(data_loader):
     try:
         db.create_all()
