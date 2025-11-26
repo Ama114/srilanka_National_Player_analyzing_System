@@ -11,6 +11,7 @@ datasets = {
 
 df_players_ml = pd.DataFrame()
 model = None
+model_info = None  # Will contain encoders and feature info
 default_weather = 'Balanced'
 
 WICKET_KEEPER_NAMES = {
@@ -203,19 +204,30 @@ def load_ml_dataset():
         return False
 
 def load_ml_model():
-    global model
+    global model, model_info
     try:
         if os.path.exists("best_xi_model.joblib"):
             model = joblib.load("best_xi_model.joblib")
             print("✓ ML model 'best_xi_model.joblib' loaded successfully.")
+            
+            # Try to load encoders
+            if os.path.exists("best_xi_model_encoders.joblib"):
+                model_info = joblib.load("best_xi_model_encoders.joblib")
+                print("✓ Model encoders loaded successfully.")
+            else:
+                print("⚠ Model encoders file not found - will attempt predictions without encoders")
+                model_info = None
+            
             return True
         else:
             print("⚠ ML model file 'best_xi_model.joblib' not found - continuing without model")
             model = None
+            model_info = None
             return False
     except Exception as e:
         print(f"⚠ Error loading ML model: {str(e)[:100]} - continuing without model")
         model = None
+        model_info = None
         return False
 
 # Initialize ML components
@@ -246,3 +258,77 @@ def get_dataset(match_type='ODI', data_type='batting'):
 def get_all_match_types():
     """Get list of all available match types"""
     return list(datasets.keys())
+
+# ========================================================================
+# PREDICTION HELPER
+# ========================================================================
+def predict_player_scores(opposition, pitch_type, weather, player_name, player_role):
+    """
+    Predict player scores using the ML model with proper feature encoding
+    
+    Args:
+        opposition: String (e.g., 'India')
+        pitch_type: String (e.g., 'spin', 'bouncy')
+        weather: String (e.g., 'humid', 'sunny')
+        player_name: String (player name)
+        player_role: String (e.g., 'batting', 'bowling')
+    
+    Returns:
+        Tuple of (batting_score, bowling_score) or None if prediction fails
+    """
+    global model, model_info, df_players_ml
+    
+    if model is None:
+        print("Error: ML model not loaded")
+        return None
+    
+    if model_info is None:
+        print("Error: Model encoders not loaded")
+        return None
+    
+    if df_players_ml.empty:
+        print("Error: ML dataset not loaded")
+        return None
+    
+    try:
+        # Get encoders
+        encoders = model_info.get('encoders', {})
+        feature_columns = model_info.get('feature_columns', [])
+        
+        # Encode categorical features
+        encoded_role = encoders['main_role'].transform([player_role])[0] if player_role in encoders['main_role'].classes_ else 0
+        encoded_opposition = encoders['opposition'].transform([opposition])[0] if opposition in encoders['opposition'].classes_ else 0
+        encoded_pitch = encoders['pitch_type'].transform([pitch_type])[0] if pitch_type in encoders['pitch_type'].classes_ else 0
+        encoded_weather = encoders['weather'].transform([weather])[0] if weather in encoders['weather'].classes_ else 0
+        encoded_style = encoders['batting_style'].transform(['No_Bowling'])[0]  # Default batting style
+        
+        # Create input DataFrame with all required features
+        input_data = pd.DataFrame({
+            'main_role_encoded': [encoded_role],
+            'opposition_encoded': [encoded_opposition],
+            'pitch_type_encoded': [encoded_pitch],
+            'weather_encoded': [encoded_weather],
+            'batting_style_encoded': [encoded_style],
+            'runs': [0],
+            'strike_rate': [0],
+            'wickets': [0],
+            'economy': [0],
+            'average': [0],
+            'balls_faced': [0],
+            'fours': [0],
+            'sixes': [0]
+        })
+        
+        # Reorder to match training features
+        input_data = input_data[feature_columns]
+        
+        # Make prediction
+        prediction = model.predict(input_data)[0]
+        batting_score, bowling_score = prediction
+        
+        return float(batting_score), float(bowling_score)
+    except Exception as e:
+        print(f"Error predicting for {player_name}: {e}")
+        import traceback
+        traceback.print_exc()
+        return None

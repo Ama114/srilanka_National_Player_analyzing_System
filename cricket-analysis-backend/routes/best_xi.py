@@ -482,3 +482,144 @@ def suggest_best_xi():
     print(f"Generated Best XI: {len(formatted_team)} players for {opposition} on {pitch} pitch ({weather} weather, {match_type} match)")
     
     return jsonify(formatted_team)
+
+# --- ML-BASED BEST XI GENERATION ---
+@best_xi_bp.route('/api/best-xi/generate-ml', methods=['GET'])
+def generate_best_xi_ml():
+    """Generate Best XI using ML model predictions"""
+    
+    opposition = request.args.get('opposition')
+    pitch_type = request.args.get('pitch_type')
+    weather = request.args.get('weather')
+    
+    if not all([opposition, pitch_type, weather]):
+        return jsonify({"error": "Missing parameters: opposition, pitch_type, weather"}), 400
+    
+    if not data_loader.model:
+        return jsonify({"error": "ML model not loaded"}), 500
+    
+    if data_loader.df_players_ml.empty:
+        return jsonify({"error": "Player dataset not loaded"}), 500
+    
+    try:
+        # Get unique players - handle different column names
+        df = data_loader.df_players_ml.copy()
+        
+        # Find the player name column
+        player_col = None
+        for col in ['Player_Name', 'player_name', 'Player Name']:
+            if col in df.columns:
+                player_col = col
+                break
+        
+        if not player_col:
+            # Use first column as player names
+            player_col = df.columns[0]
+        
+        # Find the role column
+        role_col = None
+        for col in ['main_role', 'Role', 'role', 'position']:
+            if col in df.columns:
+                role_col = col
+                break
+        
+        if not role_col:
+            # Create a default role column based on first available data
+            df['role'] = 'batting'
+            role_col = 'role'
+        
+        # Get unique players
+        unique_players = df[[player_col, role_col]].drop_duplicates(subset=[player_col])
+        
+        predictions = []
+        
+        # Get predictions for each player
+        for _, row in unique_players.iterrows():
+            player_name = row[player_col]
+            player_role = str(row[role_col]).lower() if pd.notna(row[role_col]) else 'batting'
+            
+            # Call the prediction helper
+            result = data_loader.predict_player_scores(
+                opposition, pitch_type, weather, player_name, player_role
+            )
+            
+            if result is None:
+                continue
+            
+            batting_score, bowling_score = result
+            
+            # Determine role category
+            role_category = 'Batsman'
+            if player_name in data_loader.WICKET_KEEPER_NAMES:
+                role_category = 'Wicket Keeper'
+            elif player_name in data_loader.ALL_ROUNDER_NAMES:
+                role_category = 'All-Rounder'
+            elif 'bowl' in player_role.lower():
+                role_category = 'Bowler'
+            
+            predictions.append({
+                'player_name': player_name,
+                'player_type': player_role,
+                'role': role_category,
+                'batting_score': float(batting_score),
+                'bowling_score': float(bowling_score),
+                'combined_score': float(batting_score + bowling_score)
+            })
+        
+        if not predictions:
+            return jsonify({"error": "No predictions generated"}), 400
+        
+        # Sort by combined score
+        predictions.sort(key=lambda x: x['combined_score'], reverse=True)
+        
+        # Select 11-player team
+        team = []
+        added_players = set()
+        role_counts = {'Wicket Keeper': 0, 'Batsman': 0, 'All-Rounder': 0, 'Bowler': 0}
+        
+        # Try to get 1 WK, 4 Bat, 3 AR, 3 Bowl
+        for pred in predictions:
+            if len(team) >= 11:
+                break
+            
+            role = pred['role']
+            
+            # Check role limits
+            if role == 'Wicket Keeper' and role_counts[role] >= 1:
+                continue
+            elif role == 'Batsman' and role_counts[role] >= 4:
+                continue
+            elif role == 'All-Rounder' and role_counts[role] >= 3:
+                continue
+            elif role == 'Bowler' and role_counts[role] >= 3:
+                continue
+            
+            if pred['player_name'] not in added_players:
+                team.append(pred)
+                added_players.add(pred['player_name'])
+                role_counts[role] += 1
+        
+        # If we need more, add remaining top predictions without role limits
+        if len(team) < 11:
+            for pred in predictions:
+                if len(team) >= 11:
+                    break
+                if pred['player_name'] not in added_players:
+                    team.append(pred)
+                    added_players.add(pred['player_name'])
+        
+        return jsonify({
+            "status": "success",
+            "opposition": opposition,
+            "pitch_type": pitch_type,
+            "weather": weather,
+            "team": team[:11],
+            "team_count": len(team),
+            "generated_at": pd.Timestamp.now().isoformat()
+        }), 200
+        
+    except Exception as e:
+        print(f"Error in ML generation: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500

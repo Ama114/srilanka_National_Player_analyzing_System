@@ -42,9 +42,9 @@ function HomePage() {
   const [loading, setLoading] = useState(true);
   const [activeMatchType, setActiveMatchType] = useState('ODI');
 
-  // Homepage eke stats load kirima
+  // load stats in Homepage 
   useEffect(() => { 
-    // Backend eken dynamic stats gannawa
+    // gain dynamic stats in Backend
     axios.get('http://127.0.0.1:5000/api/homepage-stats')
       .then(response => {
         setStats(response.data);
@@ -58,7 +58,7 @@ function HomePage() {
 
   return (
     <div className="homepage-main-container">
-      {/* --- 1. Hero Section saha Image Slider --- */}
+      {/* --- 1. Hero Section and  Image Slider --- */}
       <section className="hero-slider-container">
         <div className="slider">
           {imagesByMatchType[activeMatchType].map((image, index) => (
