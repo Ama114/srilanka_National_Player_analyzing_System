@@ -105,11 +105,11 @@ def delete_dataset_record(record_id):
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
-# --- 6. Reload Dataset (ML Model සඳහා) ---
+# --- 6. Reload Dataset (for ML Model) ---
 @dataset_bp.route('/api/dataset/reload', methods=['POST'])
 def reload_dataset():
     try:
-        # data_loader file එකේ තියෙන function එක call කරනවා
+        # call the function in data_loader file
         if data_loader.load_ml_dataset():
             return jsonify({
                 "message": "Dataset reloaded successfully", 

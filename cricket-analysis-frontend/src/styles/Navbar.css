@@ -2,7 +2,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 15px 50px;
+  padding: 20px 60px;
   position: fixed; /* Page එක scroll කරද්දී උඩින්ම තියෙන්න */
   top: 0;
   left: 0;
@@ -29,22 +29,22 @@
 .navbar-logo a {
   color: #ffffff;
   text-decoration: none;
-  font-size: 1.5em;
+  font-size: 2em;
   font-weight: bold;
   letter-spacing: 1px;
 }
 
 .logo-icon {
   fill: #ffc107; /* Yellow */
-  width: 35px;
-  height: 35px;
+  width: 45px;
+  height: 45px;
   animation: spin 8s linear infinite;
 }
 
 .navbar-links {
   list-style: none;
   display: flex;
-  gap: 35px;
+  gap: 50px;
   margin: 0;
   padding: 0;
 }
@@ -56,8 +56,8 @@
 .navbar-links a {
   color: #e0e0e0; /* Light grey, not pure white */
   text-decoration: none;
-  font-size: 1.1em;
-  font-weight: 500;
+  font-size: 1.4em;
+  font-weight: 600;
   padding: 5px 0;
   transition: color 0.3s ease;
 }

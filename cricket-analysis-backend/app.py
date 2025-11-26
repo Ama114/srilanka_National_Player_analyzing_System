@@ -74,8 +74,32 @@ def seed_best_xi_players():
 
 # Create Tables and Run
 with app.app_context():
-    db.create_all()
-    seed_best_xi_players()
+    try:
+        db.create_all()
+        print("✓ Database tables created/verified")
+        
+        # Initialize match type data
+        data_loader.initialize_match_type_data(app)
+        print("✓ Match type data loaded (ODI, T20, Test)")
+        
+        seed_best_xi_players()
+        print("✓ Best XI players seeded")
+    except Exception as e:
+        print(f"✗ Initialization error: {e}")
 
 if __name__ == '__main__':
+    print("\n" + "="*50)
+    print("🏏 Sri Lanka Cricket Analysis System Started")
+    print("="*50)
+    print(f"API running on: http://localhost:5000")
+    print(f"ML model loaded: {data_loader.model is not None}")
+    print(f"Available match types: {', '.join(data_loader.get_all_match_types())}")
+    
+    for match_type in data_loader.get_all_match_types():
+        batting_count = len(data_loader.get_dataset(match_type, 'batting'))
+        bowling_count = len(data_loader.get_dataset(match_type, 'bowling'))
+        print(f"  {match_type}: {batting_count} batting, {bowling_count} bowling records")
+    
+    print(f"ML dataset: {len(data_loader.df_players_ml)} records")
+    print("="*50 + "\n")
     app.run(debug=True, port=5000)

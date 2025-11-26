@@ -3,15 +3,44 @@ import { Link } from 'react-router-dom';
 import axios from 'axios';
 import '../styles/HomePage.css'; 
 
-// Image slider eka sadaha images - using public folder
-const slide1 = '/images/sri-lanka-odi-team.jpg';
-const slide2 = '/images/pathum.jpg';
-const slide3 = '/images/sadeera.jpg';
-const slide4 = '/images/wanindu.jpg';
+// ODI Images
+const odiImages = [
+  '/images/sri-lanka-odi-team.jpg',
+  '/images/pathum.jpg',
+  '/images/sadeera.jpg',
+  '/images/wanindu.jpg'
+];
+
+// T20 Images (placeholder - will use generic T20 cricket images)
+const t20Images = [
+  '/images/sri-lanka-odi-team.jpg',
+  '/images/pathum.jpg',
+  '/images/sadeera.jpg',
+  '/images/wanindu.jpg'
+];
+
+// Test Images (placeholder - will use generic Test cricket images)
+const testImages = [
+  '/images/sri-lanka-odi-team.jpg',
+  '/images/pathum.jpg',
+  '/images/sadeera.jpg',
+  '/images/wanindu.jpg'
+];
+
+const imagesByMatchType = {
+  ODI: odiImages,
+  T20: t20Images,
+  Test: testImages
+};
 
 function HomePage() {
-  const [stats, setStats] = useState(null);
+  const [stats, setStats] = useState({
+    ODI: null,
+    T20: null,
+    Test: null
+  });
   const [loading, setLoading] = useState(true);
+  const [activeMatchType, setActiveMatchType] = useState('ODI');
 
   // Homepage eke stats load kirima
   useEffect(() => { 
@@ -25,45 +54,58 @@ function HomePage() {
         console.error("Error fetching homepage stats:", error);
         setLoading(false);
       });
-  }, []); // Me effect eka page eka load weddi ekaparayi run wenne
+  }, []);
 
   return (
     <div className="homepage-main-container">
       {/* --- 1. Hero Section saha Image Slider --- */}
       <section className="hero-slider-container">
         <div className="slider">
-          {/* Apey slider images */}
-          <img src={slide1} alt="Cricket Stadium" />
-          <img src={slide2} alt="Sri Lankan Team" />
-          <img src={slide3} alt="Cricket Action" />
-          <img src={slide4} alt="Fans Celebrating" />
+          {imagesByMatchType[activeMatchType].map((image, index) => (
+            <img key={index} src={image} alt={`${activeMatchType} Cricket`} />
+          ))}
         </div>
         <div className="hero-content">
           <h1>Sri Lanka National Cricket Analysis Dashboard</h1>
+          <p className="hero-subtitle">{activeMatchType} Format - Comprehensive Player Performance Analysis</p>
           <p>The ultimate platform for in-depth player analysis, performance tracking, and AI-powered team suggestions.</p>
-          {/* Search bar eka methanin ayin kala */}
         </div>
       </section>
 
       {/* --- 2. Dynamic Stats Dashboard --- */}
       <section className="stats-dashboard-container">
         <h2>Project at a Glance</h2>
+        
+        {/* Match Type Tabs */}
+        <div className="match-type-tabs">
+          {['ODI', 'T20', 'Test'].map(matchType => (
+            <button
+              key={matchType}
+              className={`tab-button ${activeMatchType === matchType ? 'active' : ''}`}
+              onClick={() => setActiveMatchType(matchType)}
+            >
+              {matchType}
+            </button>
+          ))}
+        </div>
+
+        {/* Stats Grid for Active Match Type */}
         <div className="stats-grid">
           <div className="stat-card">
-            <h3>{loading ? '...' : stats?.totalRuns.toLocaleString()}</h3>
+            <h3>{loading ? '...' : stats[activeMatchType]?.totalRuns.toLocaleString()}</h3>
             <p>Total Runs Analyzed</p>
           </div>
           <div className="stat-card">
-            <h3>{loading ? '...' : stats?.totalWickets.toLocaleString()}</h3>
+            <h3>{loading ? '...' : stats[activeMatchType]?.totalWickets.toLocaleString()}</h3>
             <p>Total Wickets Taken</p>
           </div>
           <div className="stat-card">
-            <h3>{loading ? '...' : stats?.topScorer.name}</h3>
-            <p>Top Scorer ({loading ? '...' : stats?.topScorer.stat})</p>
+            <h3>{loading ? '...' : stats[activeMatchType]?.topScorer.name}</h3>
+            <p>Top Scorer ({loading ? '...' : stats[activeMatchType]?.topScorer.stat})</p>
           </div>
           <div className="stat-card">
-            <h3>{loading ? '...' : stats?.topBowler.name}</h3>
-            <p>Top Bowler ({loading ? '...' : stats?.topBowler.stat})</p>
+            <h3>{loading ? '...' : stats[activeMatchType]?.topBowler.name}</h3>
+            <p>Top Bowler ({loading ? '...' : stats[activeMatchType]?.topBowler.stat})</p>
           </div>
         </div>
       </section>
@@ -98,9 +140,8 @@ function HomePage() {
           <Link to="/best-11-suggestion" className="portal-button">Try the ML Model</Link>
         </div>
         <div className="video-player">
-          {/* Obata puluwan me 'src' link eka obage project demo video eke link eken maaru karanna */}
           <iframe 
-            src="https://www.youtube.com/embed/nC4-5I-8__A" // Placeholder video
+            src="https://www.youtube.com/embed/nC4-5I-8__A"
             title="Project Demo Video" 
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
             allowFullScreen>

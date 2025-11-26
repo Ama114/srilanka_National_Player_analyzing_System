@@ -42,8 +42,7 @@ class PlayerPerformanceRecord(db.Model):
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
     updated_at = db.Column(db.DateTime, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
 
-    # මෙතැන තිබූ __table_args__ (Unique Constraint) කොටස ඉවත් කරන ලදී.
-    # දැන් එකම ක්‍රීඩකයාට සමාන අවස්ථා කිහිපයක් තිබිය හැක.
+
 
     def to_dict(self):
         return {
