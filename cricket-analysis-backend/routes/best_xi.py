@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify, request
-from models import db, BestXIPlayer, GeneratedBestXITeam
+from models import db, BestXIPlayer, GeneratedBestXITeam, ODIPerformance
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import func
 import data_loader
 import pandas as pd
 import json
@@ -10,30 +11,109 @@ best_xi_bp = Blueprint('best_xi', __name__)
 # --- Dropdowns ---
 @best_xi_bp.route('/api/all-grounds', methods=['GET'])
 def get_all_grounds():
-    if not data_loader.df_batting.empty:
-        grounds = data_loader.df_batting['Ground'].unique().tolist()
-        return jsonify(sorted(grounds))
-    return jsonify([])
+    # Use database only
+    try:
+        grounds = db.session.query(ODIPerformance.ground).distinct().all()
+        grounds_list = sorted([g[0] for g in grounds if g[0]])
+        return jsonify(grounds_list)
+    except Exception as e:
+        print(f"Error fetching grounds from database: {e}")
+        return jsonify({"error": "Database error occurred"}), 500
 
 @best_xi_bp.route('/api/ml/oppositions', methods=['GET'])
 def get_ml_oppositions():
-    df = data_loader.df_players_ml
-    if df.empty: return jsonify([])
-    
-    col_name = next((name for name in ['Opponent_Team', 'opponent_team'] if name in df.columns), None)
-    if not col_name: return jsonify({"error": "Opponent_Team column not found"}), 500
-    
-    return jsonify(sorted(df[col_name].dropna().unique().tolist()))
+    # Use database only
+    try:
+        oppositions = db.session.query(ODIPerformance.opposition).distinct().all()
+        opp_list = sorted([o[0] for o in oppositions if o[0]])
+        return jsonify(opp_list)
+    except Exception as e:
+        print(f"Error fetching oppositions from database: {e}")
+        return jsonify({"error": "Database error occurred"}), 500
 
 @best_xi_bp.route('/api/ml/weather-types', methods=['GET'])
 def get_ml_weather_types():
+    # Try CSV first (weather not in odi_performance table)
     df = data_loader.df_players_ml
-    if df.empty: return jsonify([])
+    if not df.empty:
+        col_name = next((name for name in ['Weather', 'weather'] if name in df.columns), None)
+        if col_name:
+            weather_list = sorted(df[col_name].dropna().unique().tolist())
+            if weather_list:
+                return jsonify(weather_list)
     
-    col_name = next((name for name in ['Weather', 'weather'] if name in df.columns), None)
-    if not col_name: return jsonify({"error": "Weather column not found"}), 500
+    return jsonify([])
+
+# --- ODI Performance Routes ---
+@best_xi_bp.route('/api/odi-performance', methods=['GET'])
+def get_odi_performance():
+    """Get ODI performance data from database"""
+    player_name = request.args.get('player')
+    opposition = request.args.get('opposition')
+    ground = request.args.get('ground')
     
-    return jsonify(sorted(df[col_name].dropna().unique().tolist()))
+    query = ODIPerformance.query
+    
+    if player_name:
+        query = query.filter(ODIPerformance.player_name == player_name)
+    if opposition:
+        query = query.filter(ODIPerformance.opposition == opposition)
+    if ground:
+        query = query.filter(ODIPerformance.ground == ground)
+    
+    try:
+        performances = query.all()
+        return jsonify([p.to_dict() for p in performances])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@best_xi_bp.route('/api/odi-performance/stats', methods=['GET'])
+def get_odi_performance_stats():
+    """Get aggregated ODI performance stats by player"""
+    player_name = request.args.get('player')
+    opposition = request.args.get('opposition')
+    
+    if not player_name:
+        return jsonify({"error": "player parameter required"}), 400
+    
+    query = ODIPerformance.query.filter(ODIPerformance.player_name == player_name)
+    
+    if opposition:
+        query = query.filter(ODIPerformance.opposition == opposition)
+    
+    try:
+        performances = query.all()
+        
+        if not performances:
+            return jsonify({"message": "No performance data found"})
+        
+        # Aggregate stats
+        total_matches = sum(p.matches for p in performances)
+        total_runs = sum(p.runs for p in performances)
+        total_wickets = sum(p.wickets for p in performances)
+        avg_strike_rate = sum(p.strike_rate for p in performances) / len(performances) if performances else 0
+        avg_batting_avg = sum(p.average for p in performances) / len(performances) if performances else 0
+        avg_economy = sum(p.economy for p in performances) / len(performances) if performances else 0
+        
+        grounds_played = [p.ground for p in performances]
+        oppositions_played = [p.opposition for p in performances]
+        
+        stats = {
+            "player_name": player_name,
+            "total_matches": total_matches,
+            "total_runs": total_runs,
+            "total_wickets": total_wickets,
+            "average_strike_rate": round(avg_strike_rate, 2),
+            "average_batting_avg": round(avg_batting_avg, 2),
+            "average_economy": round(avg_economy, 2),
+            "grounds_played": sorted(list(set(grounds_played))),
+            "oppositions_played": sorted(list(set(oppositions_played))),
+            "performance_records": len(performances)
+        }
+        
+        return jsonify(stats)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # --- CRUD for Best XI ---
 @best_xi_bp.route('/api/best-xi/players', methods=['GET'])

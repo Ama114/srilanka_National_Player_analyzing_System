@@ -1,68 +1,150 @@
 from flask import Blueprint, jsonify, request
-import data_loader
-import pandas as pd
+from models import db, ODIPerformance
+from sqlalchemy import func, distinct
 
 batting_bp = Blueprint('batting', __name__)
 
 @batting_bp.route('/api/players', methods=['GET'])
 def get_players():
-    if not data_loader.df_batting.empty:
-        players = data_loader.df_batting['Player Name'].unique().tolist()
-        return jsonify(sorted(players))
-    return jsonify([])
+    match_type = request.args.get('matchType', 'ODI')
+    
+    # Use database only for ODI - Only players who have batting data (runs > 0)
+    if match_type.upper() == 'ODI':
+        try:
+            players = db.session.query(distinct(ODIPerformance.player_name)).filter(
+                ODIPerformance.runs > 0  # Only players who have scored runs (batsmen)
+            ).all()
+            if players:
+                players_list = sorted([p[0] for p in players if p[0]])
+                return jsonify(players_list)
+            return jsonify([])
+        except Exception as e:
+            print(f"Error fetching players from database: {e}")
+            return jsonify({"error": "Database error occurred"}), 500
+    
+    return jsonify({"error": "Only ODI match type is supported"}), 400
 
 @batting_bp.route('/api/grounds-for-player', methods=['GET'])
 def get_grounds_for_player():
     player_name = request.args.get('player')
-    df = data_loader.df_batting
-    if not player_name or df.empty: return jsonify([])
+    match_type = request.args.get('matchType', 'ODI')
     
-    player_grounds = df[df['Player Name'] == player_name]['Ground'].unique().tolist()
-    return jsonify(sorted(player_grounds))
+    if not player_name:
+        return jsonify([])
+    
+    # Use database only for ODI - Only grounds where player has batting data (runs > 0)
+    if match_type.upper() == 'ODI':
+        try:
+            grounds = db.session.query(distinct(ODIPerformance.ground)).filter(
+                ODIPerformance.player_name == player_name,
+                ODIPerformance.runs > 0  # Only grounds where player has scored runs
+            ).all()
+            grounds_list = sorted([g[0] for g in grounds if g[0]])
+            return jsonify(grounds_list)
+        except Exception as e:
+            print(f"Error fetching grounds from database: {e}")
+            return jsonify({"error": "Database error occurred"}), 500
+    
+    return jsonify({"error": "Only ODI match type is supported"}), 400
 
 @batting_bp.route('/api/player-ground-stats', methods=['GET'])
 def get_player_stats():
     player_name = request.args.get('player')
     ground_name = request.args.get('ground')
-    df = data_loader.df_batting
+    match_type = request.args.get('matchType', 'ODI')
     
-    if not player_name or not ground_name or df.empty: 
+    if not player_name or not ground_name:
         return jsonify({'error': 'Parameters required'}), 400
-        
-    filtered_df = df[(df['Player Name'] == player_name) & (df['Ground'] == ground_name)]
-    if filtered_df.empty: return jsonify({'message': 'No data found'})
     
-    total_runs = int(filtered_df['Runs'].sum())
-    out_innings = filtered_df[filtered_df['Dismissal'] != 'not out']
-    average = (total_runs / len(out_innings)) if not out_innings.empty else float('inf')
-    total_balls_faced = filtered_df['BF'].sum()
-    strike_rate = (total_runs / total_balls_faced * 100) if total_balls_faced > 0 else 0
+    # Use database only for ODI - Only batting records (runs > 0)
+    if match_type.upper() == 'ODI':
+        try:
+            performances = ODIPerformance.query.filter(
+                ODIPerformance.player_name == player_name,
+                ODIPerformance.ground == ground_name,
+                ODIPerformance.runs > 0  # Only batting records (runs > 0)
+            ).all()
+            
+            if not performances:
+                return jsonify({'message': 'No data found'}), 404
+            
+            total_matches = sum(p.matches for p in performances)
+            total_runs = sum(p.runs for p in performances)
+            total_fours = sum(p.fours for p in performances if p.fours)
+            total_sixes = sum(p.sixes for p in performances if p.sixes)
+            avg_strike_rate = sum(p.strike_rate for p in performances) / len(performances) if performances else 0
+            avg_batting_avg = sum(p.average for p in performances) / len(performances) if performances else 0
+            
+            # Find best opposition by runs
+            opposition_runs = {}
+            for p in performances:
+                if p.opposition not in opposition_runs:
+                    opposition_runs[p.opposition] = 0
+                opposition_runs[p.opposition] += p.runs
+            
+            best_opposition = max(opposition_runs.items(), key=lambda x: x[1])[0] if opposition_runs else 'N/A'
+            
+            # Find most frequent dismissal
+            dismissals = [p.dismissal for p in performances if p.dismissal]
+            most_frequent_dismissal = max(set(dismissals), key=dismissals.count) if dismissals else 'N/A'
+            
+            # Find most frequent batting position
+            positions = [p.bat_position for p in performances if p.bat_position]
+            recommended_position = int(max(set(positions), key=positions.count)) if positions else 'N/A'
+            
+            stats = {
+                "matches": total_matches,
+                "totalRuns": total_runs,
+                "mostFrequentDismissal": most_frequent_dismissal,
+                "bestOpposition": best_opposition,
+                "total4s": total_fours,
+                "total6s": total_sixes,
+                "average": round(avg_batting_avg, 2) if avg_batting_avg > 0 else 'Not Out',
+                "strikeRate": round(avg_strike_rate, 2),
+                "recommendedPosition": recommended_position
+            }
+            return jsonify(stats)
+        except Exception as e:
+            print(f"Error fetching stats from database: {e}")
+            return jsonify({"error": "Database error occurred"}), 500
     
-    stats = { 
-        "matches": len(filtered_df), 
-        "totalRuns": total_runs, 
-        "mostFrequentDismissal": filtered_df['Dismissal'].mode().iloc[0] if not filtered_df.empty else 'N/A', 
-        "bestOpposition": filtered_df.groupby('Opposition')['Runs'].sum().idxmax() if not filtered_df.empty else 'N/A', 
-        "total4s": int(filtered_df['4s'].sum()), 
-        "total6s": int(filtered_df['6s'].sum()), 
-        "average": round(average, 2) if average != float('inf') else 'Not Out', 
-        "strikeRate": round(strike_rate, 2), 
-        "recommendedPosition": int(filtered_df['Pos'].mode().iloc[0]) if not filtered_df.empty else 'N/A' 
-    }
-    return jsonify(stats)
+    return jsonify({"error": "Only ODI match type is supported"}), 400
 
 @batting_bp.route('/api/player-ground-chart-data', methods=['GET'])
 def get_chart_data():
     player_name = request.args.get('player')
     ground_name = request.args.get('ground')
-    df = data_loader.df_batting
+    match_type = request.args.get('matchType', 'ODI')
     
-    if not player_name or not ground_name or df.empty: 
+    if not player_name or not ground_name:
         return jsonify({'error': 'Parameters required'}), 400
-        
-    filtered_df = df[(df['Player Name'] == player_name) & (df['Ground'] == ground_name)]
-    if filtered_df.empty: return jsonify({'labels': [], 'data': []})
     
-    runs_by_opposition = filtered_df.groupby('Opposition')['Runs'].sum().sort_values(ascending=False)
-    chart_data = {'labels': runs_by_opposition.index.tolist(), 'data': runs_by_opposition.values.tolist()}
-    return jsonify(chart_data)
+    # Use database only for ODI
+    if match_type.upper() == 'ODI':
+        try:
+            performances = ODIPerformance.query.filter(
+                ODIPerformance.player_name == player_name,
+                ODIPerformance.ground == ground_name,
+                ODIPerformance.runs > 0  # Only batting records (runs > 0)
+            ).all()
+            
+            if not performances:
+                return jsonify({'labels': [], 'data': []})
+            
+            opposition_runs = {}
+            for p in performances:
+                if p.opposition not in opposition_runs:
+                    opposition_runs[p.opposition] = 0
+                opposition_runs[p.opposition] += p.runs
+            
+            sorted_oppositions = sorted(opposition_runs.items(), key=lambda x: x[1], reverse=True)
+            chart_data = {
+                'labels': [opp[0] for opp in sorted_oppositions],
+                'data': [opp[1] for opp in sorted_oppositions]
+            }
+            return jsonify(chart_data)
+        except Exception as e:
+            print(f"Error fetching chart data from database: {e}")
+            return jsonify({"error": "Database error occurred"}), 500
+    
+    return jsonify({"error": "Only ODI match type is supported"}), 400

@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { useLocation } from 'react-router-dom'; // useLocation ඉවත් කළා
 import '../styles/BattingPerformancePage.css';
+
+const MATCH_TYPES = ['ODI', 'T20', 'Test'];
 
 function BattingPerformancePage() {
   const [players, setPlayers] = useState([]);
   const [grounds, setGrounds] = useState([]);
   const [selectedPlayer, setSelectedPlayer] = useState('');
   const [selectedGround, setSelectedGround] = useState('');
+  const [matchType, setMatchType] = useState(MATCH_TYPES[0]);
   const [stats, setStats] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -16,12 +18,19 @@ function BattingPerformancePage() {
 
   // Player list එක load කරනවා
   useEffect(() => {
-    axios.get(`${API_BASE_URL}/players`)
+    setSelectedPlayer('');
+    setGrounds([]);
+    setSelectedGround('');
+    setStats(null);
+
+    axios.get(`${API_BASE_URL}/players`, {
+      params: { matchType }
+    })
       .then(response => {
         setPlayers(response.data);
       })
       .catch(err => console.error("Error fetching players:", err));
-  }, []);
+  }, [matchType]);
 
   // Player තේරුවම grounds load කරනවා
   useEffect(() => {
@@ -29,11 +38,13 @@ function BattingPerformancePage() {
       setGrounds([]);
       setSelectedGround('');
       setStats(null);
-      axios.get(`${API_BASE_URL}/grounds-for-player?player=${selectedPlayer}`)
+      axios.get(`${API_BASE_URL}/grounds-for-player`, {
+        params: { player: selectedPlayer, matchType }
+      })
         .then(response => setGrounds(response.data))
         .catch(err => console.error("Error fetching grounds:", err));
     }
-  }, [selectedPlayer]);
+  }, [selectedPlayer, matchType]);
 
   // URL query එකෙන් player load කරන useEffect එක මෙතනින් ඉවත් කළා
 
@@ -47,7 +58,9 @@ function BattingPerformancePage() {
     setStats(null);
 
     try {
-      const statsResponse = await axios.get(`${API_BASE_URL}/player-ground-stats?player=${selectedPlayer}&ground=${selectedGround}`);
+      const statsResponse = await axios.get(`${API_BASE_URL}/player-ground-stats`, {
+        params: { player: selectedPlayer, ground: selectedGround, matchType }
+      });
       setStats(statsResponse.data);
     } catch (err) {
       setError('Failed to fetch stats. Please try again.');
@@ -63,10 +76,15 @@ function BattingPerformancePage() {
 
   return (
     <div className="performance-page-container">
-      <h1>Player Performance by Ground</h1>
+      <h1>Player Batting Performance by Ground</h1>
       <p className="subtitle">Select a player and a ground to see detailed batting statistics.</p>
       
       <div className="selection-container">
+        <select value={matchType} onChange={(e) => setMatchType(e.target.value)}>
+          {MATCH_TYPES.map(type => (
+            <option key={type} value={type}>{type}</option>
+          ))}
+        </select>
         <select value={selectedPlayer} onChange={(e) => setSelectedPlayer(e.target.value)}>
           <option value="" disabled>Select a Player</option>
           {players.map(player => <option key={player} value={player}>{player}</option>)}

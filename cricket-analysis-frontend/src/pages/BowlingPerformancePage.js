@@ -4,6 +4,8 @@ import axios from 'axios';
 import { useLocation, useNavigate } from 'react-router-dom';
 import '../styles/BowlingPerformancePage.css'; // Aluth CSS file ekata path eka
 
+const MATCH_TYPES = ['ODI', 'T20', 'Test'];
+
 // URL query eka parse karana helper function ekak
 function useQuery() {
   return new URLSearchParams(useLocation().search);
@@ -14,6 +16,7 @@ function BowlingPerformancePage() {
   const [grounds, setGrounds] = useState([]);
   const [selectedPlayer, setSelectedPlayer] = useState('');
   const [selectedGround, setSelectedGround] = useState('');
+  const [matchType, setMatchType] = useState(MATCH_TYPES[0]);
   const [stats, setStats] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -26,21 +29,20 @@ function BowlingPerformancePage() {
 
   // 1. Players list eka load karanava
   useEffect(() => {
-    axios.get(`${API_BASE_URL}/players`)
+    setGrounds([]);
+    setSelectedGround('');
+    setStats(null);
+    setError('');
+
+    axios.get(`${API_BASE_URL}/players`, {
+      params: { matchType }
+    })
       .then(response => {
         const playerList = response.data;
         setPlayers(playerList);
-        
-        // 2. URL eke player kenekge nama thiyenavada balanava
-        const playerFromUrl = query.get('player');
-        if (playerFromUrl && playerList.includes(playerFromUrl)) {
-          setSelectedPlayer(playerFromUrl);
-        } else {
-          setSelectedPlayer('');
-        }
       })
       .catch(err => console.error("Error fetching players:", err));
-  }, []); // [] kiyanne page eka load veddi vitharai run venne
+  }, [matchType]); // Match type venas unaama player list eka update karanava
 
   // 3. 'selectedPlayer' state eka venas veddi, e playerge grounds load karanava
   useEffect(() => {
@@ -49,7 +51,9 @@ function BowlingPerformancePage() {
       setGrounds([]);
       setSelectedGround('');
       setStats(null);
-      axios.get(`${API_BASE_URL}/grounds-for-player?player=${selectedPlayer}`)
+      axios.get(`${API_BASE_URL}/grounds-for-player`, {
+        params: { player: selectedPlayer, matchType }
+      })
         .then(response => {
           setGrounds(response.data);
           setIsLoading(false);
@@ -59,22 +63,7 @@ function BowlingPerformancePage() {
           setIsLoading(false);
         });
     }
-  }, [selectedPlayer]); // Me effect eka 'selectedPlayer' venas venakota vitharak run venava
-
-  // 4. Browser eke back/forward giyoth URL eka balala state eka update karanava
-   useEffect(() => {
-    const playerFromUrl = query.get('player');
-    if (playerFromUrl && players.includes(playerFromUrl)) {
-      if (playerFromUrl !== selectedPlayer) {
-        setSelectedPlayer(playerFromUrl);
-      }
-    }
-    if (!playerFromUrl) {
-        setSelectedPlayer('');
-        setSelectedGround('');
-        setStats(null);
-    }
-  }, [location.search, players, selectedPlayer]);
+  }, [selectedPlayer, matchType]); // Match type eka venas unaath data tika reset karanava
 
   const handleFetchStats = async () => {
     if (!selectedPlayer || !selectedGround) {
@@ -86,7 +75,9 @@ function BowlingPerformancePage() {
     setStats(null);
 
     try {
-      const response = await axios.get(`${API_BASE_URL}/player-ground-stats?player=${selectedPlayer}&ground=${selectedGround}`);
+      const response = await axios.get(`${API_BASE_URL}/player-ground-stats`, {
+        params: { player: selectedPlayer, ground: selectedGround, matchType }
+      });
       setStats(response.data);
     } catch (err) {
       setError('Failed to fetch stats. Please try again.');
@@ -101,11 +92,49 @@ function BowlingPerformancePage() {
   };
 
   // Dropdown eken player venas karama URL ekath update karanava
+  const updateUrlParams = (playerValue, matchTypeValue) => {
+    const params = new URLSearchParams();
+    if (playerValue) params.set('player', playerValue);
+    if (matchTypeValue) params.set('matchType', matchTypeValue);
+    const searchString = params.toString();
+    navigate(`/bowling-performance${searchString ? `?${searchString}` : ''}`);
+  };
+
   const handlePlayerChange = (e) => {
     const newPlayer = e.target.value;
     setSelectedPlayer(newPlayer);
-    navigate(`/bowling-performance?player=${encodeURIComponent(newPlayer)}`);
+    updateUrlParams(newPlayer, matchType);
   };
+
+  const handleMatchTypeChange = (e) => {
+    const newMatchType = e.target.value;
+    setMatchType(newMatchType);
+    updateUrlParams(selectedPlayer, newMatchType);
+  };
+
+  useEffect(() => {
+    const playerFromUrl = query.get('player');
+    if (playerFromUrl && players.includes(playerFromUrl)) {
+      if (playerFromUrl !== selectedPlayer) {
+        setSelectedPlayer(playerFromUrl);
+      }
+    }
+    if (!playerFromUrl) {
+        setSelectedPlayer('');
+        setSelectedGround('');
+        setStats(null);
+    }
+  }, [location.search, players, selectedPlayer]);
+
+  useEffect(() => {
+    const typeFromUrl = query.get('matchType');
+    if (typeFromUrl && MATCH_TYPES.includes(typeFromUrl) && typeFromUrl !== matchType) {
+      setMatchType(typeFromUrl);
+    }
+    if (!typeFromUrl && matchType !== MATCH_TYPES[0]) {
+      setMatchType(MATCH_TYPES[0]);
+    }
+  }, [location.search, matchType]);
 
   return (
     <div className="performance-page-container">
@@ -113,6 +142,11 @@ function BowlingPerformancePage() {
       <p className="subtitle">Select a player and a ground to see detailed bowling statistics.</p>
       
       <div className="selection-container">
+        <select value={matchType} onChange={handleMatchTypeChange}>
+          {MATCH_TYPES.map(type => (
+            <option key={type} value={type}>{type}</option>
+          ))}
+        </select>
         <select value={selectedPlayer} onChange={handlePlayerChange}>
           <option value="" disabled>Select a Player</option>
           {players.map(player => <option key={player} value={player}>{player}</option>)}

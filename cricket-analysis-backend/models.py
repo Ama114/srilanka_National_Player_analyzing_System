@@ -87,6 +87,83 @@ class GeneratedBestXITeam(db.Model):
             "created_at": self.created_at.isoformat() if self.created_at else None
         }
 
+
+class BaseMatchPerformance:
+    """Common columns shared by ODI/T20/Test performance tables."""
+    id = db.Column(db.Integer, primary_key=True)
+    player_name = db.Column(db.String(120), nullable=False)
+    opposition = db.Column(db.String(120), nullable=False)
+    ground = db.Column(db.String(120), nullable=False)
+    matches = db.Column(db.Integer, default=0)
+    runs = db.Column(db.Integer, default=0)
+    strike_rate = db.Column(db.Float, default=0.0)
+    average = db.Column(db.Float, default=0.0)
+    wickets = db.Column(db.Integer, default=0)
+    economy = db.Column(db.Float, default=0.0)
+    
+    # Additional columns from CSV
+    match_type = db.Column(db.String(20), default='ODI')
+    batting_style = db.Column(db.String(50))
+    main_role = db.Column(db.String(50))
+    balls_faced = db.Column(db.Integer, default=0)
+    fours = db.Column(db.Integer, default=0)
+    sixes = db.Column(db.Integer, default=0)
+    bat_position = db.Column(db.Integer)
+    dismissal = db.Column(db.String(50))
+    pitch_type = db.Column(db.String(50))
+    date = db.Column(db.Date)
+    weather = db.Column(db.String(50))
+    bowling_style = db.Column(db.String(50))
+    overs = db.Column(db.Float, default=0.0)
+    maidens = db.Column(db.Integer, default=0)
+    runs_conceded = db.Column(db.Integer, default=0)
+    bowling_pos = db.Column(db.Integer)
+    notes = db.Column(db.String(500))
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "player_name": self.player_name,
+            "opposition": self.opposition,
+            "ground": self.ground,
+            "matches": self.matches,
+            "runs": self.runs,
+            "strike_rate": self.strike_rate,
+            "average": self.average,
+            "wickets": self.wickets,
+            "economy": self.economy,
+            "match_type": self.match_type,
+            "batting_style": self.batting_style,
+            "main_role": self.main_role,
+            "balls_faced": self.balls_faced,
+            "fours": self.fours,
+            "sixes": self.sixes,
+            "bat_position": self.bat_position,
+            "dismissal": self.dismissal,
+            "pitch_type": self.pitch_type,
+            "date": self.date.isoformat() if self.date else None,
+            "weather": self.weather,
+            "bowling_style": self.bowling_style,
+            "overs": self.overs,
+            "maidens": self.maidens,
+            "runs_conceded": self.runs_conceded,
+            "bowling_pos": self.bowling_pos,
+            "notes": self.notes,
+        }
+
+
+class ODIPerformance(BaseMatchPerformance, db.Model):
+    __tablename__ = 'odi_performance'
+
+
+class T20Performance(BaseMatchPerformance, db.Model):
+    __tablename__ = 't20_performance'
+
+
+class TestPerformance(BaseMatchPerformance, db.Model):
+    __tablename__ = 'test_performance'
+
+
 def seed_database(data_loader):
     try:
         db.create_all()
