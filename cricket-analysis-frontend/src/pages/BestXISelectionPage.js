@@ -3,11 +3,11 @@ import axios from 'axios';
 import '../styles/BestXISelectionPage.css';
 
 function BestXISelectionPage() {
-  const [matchType, setMatchType] = useState('ODI');
-  const [opposition, setOpposition] = useState('Bangladesh');
+  const [matchType, setMatchType] = useState('match_type');
+  const [opposition, setOpposition] = useState('opposition');
   const [oppositions, setOppositions] = useState([]);
-  const [pitchType, setPitchType] = useState('Balanced');
-  const [weather, setWeather] = useState('Balanced');
+  const [pitchType, setPitchType] = useState('pitch_type');
+  const [weather, setWeather] = useState('weather');
   
   const [bestTeam, setBestTeam] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -90,6 +90,7 @@ function BestXISelectionPage() {
         <div className="form-group">
           <label>Match Type</label>
           <select value={matchType} onChange={(e) => setMatchType(e.target.value)}>
+             <option value="">Match Type</option>
             {MATCH_TYPES.map(type => (
               <option key={type} value={type}>{type}</option>
             ))}
@@ -99,7 +100,7 @@ function BestXISelectionPage() {
         <div className="form-group">
           <label>Opposition</label>
           <select value={opposition} onChange={(e) => setOpposition(e.target.value)}>
-            <option value="">Select Opposition</option>
+            <option value="">Opposition</option>
             {oppositions.map(opp => (
               <option key={opp} value={opp}>{opp}</option>
             ))}
@@ -109,6 +110,7 @@ function BestXISelectionPage() {
         <div className="form-group">
           <label>Pitch Type</label>
           <select value={pitchType} onChange={(e) => setPitchType(e.target.value)}>
+             <option value="">Pitch Type</option>
             {PITCH_TYPES.map(type => (
               <option key={type} value={type}>{type}</option>
             ))}
@@ -118,6 +120,7 @@ function BestXISelectionPage() {
         <div className="form-group">
           <label>Weather</label>
           <select value={weather} onChange={(e) => setWeather(e.target.value)}>
+             <option value="">Weather</option>
             {WEATHER_TYPES.map(type => (
               <option key={type} value={type}>{type}</option>
             ))}
