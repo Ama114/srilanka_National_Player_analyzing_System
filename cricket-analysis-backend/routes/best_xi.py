@@ -1,625 +1,250 @@
 from flask import Blueprint, jsonify, request
-from models import db, BestXIPlayer, GeneratedBestXITeam, ODIPerformance
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy import func
-import data_loader
 import pandas as pd
-import json
+import joblib
+import xgboost as xgb
+import os
+import traceback
+import numpy as np
 
 best_xi_bp = Blueprint('best_xi', __name__)
 
-# --- Dropdowns ---
-@best_xi_bp.route('/api/all-grounds', methods=['GET'])
-def get_all_grounds():
-    # Use database only
-    try:
-        grounds = db.session.query(ODIPerformance.ground).distinct().all()
-        grounds_list = sorted([g[0] for g in grounds if g[0]])
-        return jsonify(grounds_list)
-    except Exception as e:
-        print(f"Error fetching grounds from database: {e}")
-        return jsonify({"error": "Database error occurred"}), 500
+# --- CONFIGURATION ---
+ODI_MODEL_PATH = 'multi_target_odi_model.joblib'
+T20_MODEL_PATH = 't20_model.json'
+DATA_PATH = 'odi_performance.csv'
 
-@best_xi_bp.route('/api/ml/oppositions', methods=['GET'])
-def get_ml_oppositions():
-    # Use database only
-    try:
-        oppositions = db.session.query(ODIPerformance.opposition).distinct().all()
-        opp_list = sorted([o[0] for o in oppositions if o[0]])
-        return jsonify(opp_list)
-    except Exception as e:
-        print(f"Error fetching oppositions from database: {e}")
-        # Fallback to CSV
-        try:
-            df = data_loader.df_players_ml
-            if not df.empty:
-                col_name = next((name for name in ['Opponent_Team', 'opposition'] if name in df.columns), None)
-                if col_name:
-                    opp_list = sorted([str(o).strip() for o in df[col_name].dropna().unique().tolist() if o])
-                    return jsonify(opp_list)
-        except:
-            pass
-        return jsonify([])
+odi_model = None
+t20_model = None
 
-@best_xi_bp.route('/api/ml/weather-types', methods=['GET'])
-def get_ml_weather_types():
-    # Try CSV first (weather not in odi_performance table)
-    try:
-        df = data_loader.df_players_ml
-        if not df.empty:
-            col_name = next((name for name in ['Weather', 'weather'] if name in df.columns), None)
-            if col_name:
-                weather_list = sorted([str(w).strip() for w in df[col_name].dropna().unique().tolist() if w])
-                if weather_list:
-                    return jsonify(weather_list)
-        return jsonify([])
-    except Exception as e:
-        print(f"Error fetching weather types: {e}")
-        return jsonify([])
+# --- MODEL LOADING ---
+# 1. Load ODI Model
+try:
+    if os.path.exists(ODI_MODEL_PATH):
+        odi_model = joblib.load(ODI_MODEL_PATH)
+        print("✅ ODI Model Loaded Successfully!")
+    else:
+        print(f"⚠️ Warning: ODI Model '{ODI_MODEL_PATH}' not found.")
+except Exception as e:
+    print(f"❌ Error loading ODI model: {e}")
 
-# --- ODI Performance Routes ---
-@best_xi_bp.route('/api/odi-performance', methods=['GET'])
-def get_odi_performance():
-    """Get ODI performance data from database"""
-    player_name = request.args.get('player')
-    opposition = request.args.get('opposition')
-    ground = request.args.get('ground')
-    
-    query = ODIPerformance.query
-    
-    if player_name:
-        query = query.filter(ODIPerformance.player_name == player_name)
-    if opposition:
-        query = query.filter(ODIPerformance.opposition == opposition)
-    if ground:
-        query = query.filter(ODIPerformance.ground == ground)
-    
-    try:
-        performances = query.all()
-        return jsonify([p.to_dict() for p in performances])
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+# 2. Load T20 Model
+try:
+    if os.path.exists(T20_MODEL_PATH):
+        t20_model = xgb.Booster()
+        t20_model.load_model(T20_MODEL_PATH)
+        print("✅ T20 Model Loaded Successfully!")
+    else:
+        print(f"⚠️ Warning: T20 Model '{T20_MODEL_PATH}' not found.")
+except Exception as e:
+    print(f"❌ Error loading T20 model: {e}")
 
-@best_xi_bp.route('/api/odi-performance/stats', methods=['GET'])
-def get_odi_performance_stats():
-    """Get aggregated ODI performance stats by player"""
-    player_name = request.args.get('player')
-    opposition = request.args.get('opposition')
-    
-    if not player_name:
-        return jsonify({"error": "player parameter required"}), 400
-    
-    query = ODIPerformance.query.filter(ODIPerformance.player_name == player_name)
-    
-    if opposition:
-        query = query.filter(ODIPerformance.opposition == opposition)
-    
-    try:
-        performances = query.all()
-        
-        if not performances:
-            return jsonify({"message": "No performance data found"})
-        
-        # Aggregate stats
-        total_matches = sum(p.matches for p in performances)
-        total_runs = sum(p.runs for p in performances)
-        total_wickets = sum(p.wickets for p in performances)
-        avg_strike_rate = sum(p.strike_rate for p in performances) / len(performances) if performances else 0
-        avg_batting_avg = sum(p.average for p in performances) / len(performances) if performances else 0
-        avg_economy = sum(p.economy for p in performances) / len(performances) if performances else 0
-        
-        grounds_played = [p.ground for p in performances]
-        oppositions_played = [p.opposition for p in performances]
-        
-        stats = {
-            "player_name": player_name,
-            "total_matches": total_matches,
-            "total_runs": total_runs,
-            "total_wickets": total_wickets,
-            "average_strike_rate": round(avg_strike_rate, 2),
-            "average_batting_avg": round(avg_batting_avg, 2),
-            "average_economy": round(avg_economy, 2),
-            "grounds_played": sorted(list(set(grounds_played))),
-            "oppositions_played": sorted(list(set(oppositions_played))),
-            "performance_records": len(performances)
-        }
-        
-        return jsonify(stats)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+# --- HELPER FUNCTIONS ---
 
-# --- CRUD for Best XI ---
-@best_xi_bp.route('/api/best-xi/players', methods=['GET'])
-def list_best_xi_players():
-    players = BestXIPlayer.query.order_by(BestXIPlayer.player_name).all()
-    return jsonify([player.to_dict() for player in players])
-
-@best_xi_bp.route('/api/best-xi/players', methods=['POST'])
-def create_best_xi_player():
-    data = request.get_json() or {}
-    if not all(k in data for k in ['player_name', 'player_type', 'role']):
-        return jsonify({"error": "Missing fields"}), 400
+def get_player_data(match_format):
+    """Loads and cleans data based on format"""
+    if not os.path.exists(DATA_PATH):
+        print(f"⚠️ Data file not found: {DATA_PATH}")
+        return pd.DataFrame()
 
     try:
-        player = BestXIPlayer(
-            player_name=data['player_name'],
-            player_type=data['player_type'],
-            role=data['role']
-        )
-        db.session.add(player)
-        db.session.commit()
-        return jsonify(player.to_dict()), 201
-    except SQLAlchemyError as err:
-        db.session.rollback()
-        return jsonify({"error": str(err)}), 500
-
-@best_xi_bp.route('/api/best-xi/players/<int:player_id>', methods=['PUT'])
-def update_best_xi_player(player_id):
-    data = request.get_json() or {}
-    player = BestXIPlayer.query.get_or_404(player_id)
-    for field in ['player_name', 'player_type', 'role']:
-        if field in data: setattr(player, field, data[field])
-    try:
-        db.session.commit()
-        return jsonify(player.to_dict())
-    except SQLAlchemyError as err:
-        db.session.rollback()
-        return jsonify({"error": str(err)}), 500
-
-@best_xi_bp.route('/api/best-xi/players/<int:player_id>', methods=['DELETE'])
-def delete_best_xi_player(player_id):
-    player = BestXIPlayer.query.get_or_404(player_id)
-    try:
-        db.session.delete(player)
-        db.session.commit()
-        return jsonify({"message": "Player removed"})
-    except SQLAlchemyError as err:
-        db.session.rollback()
-        return jsonify({"error": str(err)}), 500
-
-# --- Generated Teams Management ---
-@best_xi_bp.route('/api/best-xi/generated-teams', methods=['GET'])
-def list_generated_teams():
-    """Get all generated teams, ordered by most recent first"""
-    try:
-        teams = GeneratedBestXITeam.query.order_by(GeneratedBestXITeam.created_at.desc()).limit(10).all()
-        return jsonify([team.to_dict() for team in teams]), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@best_xi_bp.route('/api/best-xi/generated-teams/<int:team_id>', methods=['GET'])
-def get_generated_team(team_id):
-    """Get a specific generated team"""
-    try:
-        team = GeneratedBestXITeam.query.get_or_404(team_id)
-        return jsonify(team.to_dict()), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@best_xi_bp.route('/api/best-xi/generated-teams/<int:team_id>', methods=['DELETE'])
-def delete_generated_team(team_id):
-    """Delete a generated team"""
-    try:
-        team = GeneratedBestXITeam.query.get_or_404(team_id)
-        db.session.delete(team)
-        db.session.commit()
-        return jsonify({"message": "Team deleted successfully"}), 200
-    except SQLAlchemyError as err:
-        db.session.rollback()
-        return jsonify({"error": str(err)}), 500
-
-# --- Prediction Logic ---
-@best_xi_bp.route('/api/best-xi/generate', methods=['GET'])
-def generate_best_xi():
-    """Generate Best XI based on match conditions - works with ODI, T20, Test"""
-    opposition = request.args.get('opposition')
-    pitch_type = request.args.get('pitch_type')
-    weather = request.args.get('weather')
-    match_type = request.args.get('match_type', 'ODI').upper()
-    
-    if not all([opposition, pitch_type, weather]):
-        return jsonify({"error": "Missing parameters: opposition, pitch_type, weather"}), 400
-    
-    # Map match type to database model
-    from models import ODIPerformance, T20Performance, TestPerformance
-    match_models = {
-        'ODI': ODIPerformance,
-        'TEST': TestPerformance,
-        'T20': T20Performance
-    }
-    
-    if match_type not in match_models:
-        return jsonify({"error": f"Invalid match type. Use ODI, TEST, or T20"}), 400
-    
-    try:
-        model_class = match_models[match_type]
+        df = pd.read_csv(DATA_PATH)
         
-        # Get all unique players with their roles from the selected match type
-        players_query = db.session.query(
-            model_class.player_name, 
-            model_class.main_role,
-            model_class.runs,
-            model_class.wickets
-        ).distinct(model_class.player_name).all()
-        
-        if not players_query:
-            return jsonify({"error": f"No players found for {match_type} matches"}), 404
-        
-        # Classify players by role
-        keepers = []
-        batsmen = []
-        all_rounders = []
-        bowlers = []
-        processed_players = set()  # Track which players we've already classified
-        
-        # Known player role mappings
-        KNOWN_KEEPERS = {
-            'Kusal Mendis', 'Sadeera Samarawickrama', 'Kusal Janith Perera',
-            'kusal_mendis', 'sadeera_samarawickrama', 'kusal_janith_perera'
-        }
-        
-        KNOWN_ALL_ROUNDERS = {
-            'Wanindu Hasaranga', 'Dhananjaya de Silva', 'Dasun Shanaka',
-            'Dunith Wellalage', 'Chamika Karunaratne', 'Charith Asalanka', 
-            'Janith Liyanage', 'Angelo Mathews', 'Anjelo Mathews',
-            'wanindu_hasaranga', 'dhananjaya_de_silva', 'dasun_shanaka',
-            'dunith_wellalage', 'chamika_karunaratne', 'charith_asalanka',
-            'janith_liyanage', 'angelo_mathews', 'anjelo_mathews'
-        }
-        
-        # Process each player
-        for player_name, main_role, runs, wickets in players_query:
-            # Skip if we've already processed this player
-            if player_name in processed_players:
-                continue
-            processed_players.add(player_name)
-            
-            player_info = {
-                'player_name': player_name,
-                'player_type': 'Batsman',
-                'role': 'Batsman'
-            }
-            
-            # Determine role based on main_role field, known mappings, and performance
-            if player_name in KNOWN_KEEPERS:
-                player_info['role'] = 'Wicket Keeper'
-                player_info['player_type'] = 'Wicket Keeper'
-                keepers.append(player_info)
-            elif player_name in KNOWN_ALL_ROUNDERS:
-                player_info['role'] = 'All-Rounder'
-                player_info['player_type'] = 'All-Rounder'
-                all_rounders.append(player_info)
-            elif main_role:
-                # Try to parse main_role
-                role_lower = str(main_role).lower()
-                if 'keeper' in role_lower or 'wicket' in role_lower:
-                    player_info['role'] = 'Wicket Keeper'
-                    player_info['player_type'] = 'Wicket Keeper'
-                    keepers.append(player_info)
-                elif 'allrounder' in role_lower or 'all-rounder' in role_lower or 'all_rounder' in role_lower:
-                    player_info['role'] = 'All-Rounder'
-                    player_info['player_type'] = 'All-Rounder'
-                    all_rounders.append(player_info)
-                elif 'bowler' in role_lower or 'bowling' in role_lower:
-                    player_info['role'] = 'Bowler'
-                    player_info['player_type'] = 'Bowler'
-                    bowlers.append(player_info)
-                else:
-                    player_info['role'] = 'Batsman'
-                    player_info['player_type'] = 'Batsman'
-                    batsmen.append(player_info)
-            else:
-                # If no main_role, infer from performance stats
-                if wickets and int(wickets) > 0 and runs and int(runs) > 0:
-                    # Both batting and bowling stats = all-rounder
-                    player_info['role'] = 'All-Rounder'
-                    player_info['player_type'] = 'All-Rounder'
-                    all_rounders.append(player_info)
-                elif wickets and int(wickets) > 0:
-                    # Mostly bowling stats = bowler
-                    player_info['role'] = 'Bowler'
-                    player_info['player_type'] = 'Bowler'
-                    bowlers.append(player_info)
-                else:
-                    # Default = batsman
-                    player_info['role'] = 'Batsman'
-                    player_info['player_type'] = 'Batsman'
-                    batsmen.append(player_info)
-        
-        # Build team with proper composition: 1 WK, 5 Batsmen, 3 All-rounders, 3 Bowlers
-        all_players_by_role = {
-            'Wicket Keeper': keepers,
-            'Batsman': batsmen,
-            'All-Rounder': all_rounders,
-            'Bowler': bowlers
-        }
-        
-        team = []
-        added_names = set()
-        
-        # Add players in order of role priority
-        role_order = ['Wicket Keeper', 'Batsman', 'All-Rounder', 'Bowler']
-        role_needed = {
-            'Wicket Keeper': 1,
-            'Batsman': 4,
-            'All-Rounder': 3,
-            'Bowler': 3
-        }
-        
-        # Collect exactly the required number from each role
-        for role in role_order:
-            players_for_role = all_players_by_role[role]
-            needed = role_needed[role]
-            count = 0
-            
-            for player in players_for_role:
-                if count >= needed:
-                    break
-                player_name = player['player_name']
-                if player_name not in added_names:
-                    team.append(player)
-                    added_names.add(player_name)
-                    count += 1
-        
-        if not team:
-            return jsonify({"error": f"Could not generate team for {match_type}"}), 400
-        
-        # Save to database
-        try:
-            team_name = f"{opposition} vs {match_type} - {pitch_type} Pitch ({weather})"
-            generated_team = GeneratedBestXITeam(
-                team_name=team_name,
-                opposition=opposition,
-                pitch_type=pitch_type,
-                weather=weather,
-                match_type=match_type,
-                players_json=json.dumps(team)
-            )
-            db.session.add(generated_team)
-            db.session.commit()
-        except Exception as e:
-            print(f"Error saving team: {e}")
-            db.session.rollback()
-        
-        return jsonify(team), 200
-    
-    except Exception as e:
-        print(f"Error generating Best XI: {e}")
-        return jsonify({"error": f"Error generating team: {str(e)}"}), 500
-
-@best_xi_bp.route('/api/suggest-best-xi', methods=['GET'])
-def suggest_best_xi():
-    opposition = request.args.get('opposition')
-    pitch = request.args.get('pitch')
-    weather = request.args.get('weather') or data_loader.default_weather
-    match_type = request.args.get('match_type', 'ODI')  # Default to ODI if not provided
-
-    if not all([opposition, pitch, weather, data_loader.model]):
-        return jsonify({"error": "Missing parameters or model not loaded"}), 400
-
-    if data_loader.df_players_ml.empty:
-        return jsonify({"error": "CSV dataset not loaded"}), 400
-
-    unique_players = data_loader.df_players_ml[['Player_Name', 'Player_Type', 'Role']].drop_duplicates(subset=['Player_Name'])
-    
-    predictions = []
-    for _, row in unique_players.iterrows():
-        player_name = row['Player_Name']
-        player_type = row['Player_Type'] if pd.notna(row['Player_Type']) else 'Batsman'
-        
-        input_data = pd.DataFrame({
-            'Opponent_Team': [opposition], 'Pitch_Type': [pitch],
-            'Weather': [weather], 'Player_Name': [player_name],
-            'Player_Type': [player_type]
+        # Rename columns
+        df = df.rename(columns={
+            'player_name': 'Player_Name', 'batting_runs': 'Runs', 'sr': 'SR',
+            'wicket_taken': 'Wickets', 'econ': 'Econ', 'fours': 'Fours',
+            'sixes': 'Sixes', 'main_role': 'main_role', 'bowling_style': 'Bowling_Style',
+            'match_type': 'Match_Type'
         })
+
+        # Filter
+        if 'Match_Type' in df.columns:
+            df = df[df['Match_Type'].str.lower() == match_format.lower()]
         
-        try:
-            predicted_score = data_loader.model.predict(input_data)[0]
-            role = row['Role'] if pd.notna(row['Role']) else player_type
-            
-            if player_name in data_loader.WICKET_KEEPER_NAMES: role = 'Wicket Keeper'
-            elif player_name in data_loader.ALL_ROUNDER_NAMES: role = 'All-Rounder'
-            
-            predictions.append({
-                'name': player_name, 'type': player_type,
-                'role': role, 'score': float(predicted_score)
-            })
-        except: continue
+        if df.empty: return pd.DataFrame()
 
-    if not predictions: return jsonify({"error": "No predictions generated"}), 400
+        # Numeric conversion
+        numeric_cols = ['Runs', 'SR', 'Wickets', 'Econ', 'Fours', 'Sixes']
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0).astype(float)
+        
+        # Aggregate
+        df_agg = df.groupby('Player_Name').agg({
+            'main_role': 'first', 'Bowling_Style': 'first',
+            'Runs': 'mean', 'SR': 'mean', 'Wickets': 'mean',
+            'Econ': 'mean', 'Fours': 'mean', 'Sixes': 'mean'
+        }).reset_index()
 
-    predictions.sort(key=lambda x: x['score'], reverse=True)
-    
-    final_team = []
-    team_names = set()
-    
-    # Select Keeper
-    keepers = [p for p in predictions if 'keeper' in str(p['role']).lower()]
-    if keepers:
-        best_keeper = max(keepers, key=lambda x: x['score'])
-        best_keeper['role'] = 'Wicket Keeper'
-        final_team.append(best_keeper)
-        team_names.add(best_keeper['name'])
+        # Rename for Model Features
+        df_agg.rename(columns={
+            'Runs': 'Avg_Batting_Runs', 'SR': 'Avg_SR',
+            'Wickets': 'Avg_Wicket_taken', 'Econ': 'Avg_Econ',
+            'Fours': 'Avg_Fours', 'Sixes': 'Avg_Sixes'
+        }, inplace=True)
 
-    # Fill remaining spots
-    for p in predictions:
-        if len(final_team) >= 11: break
-        if p['name'] not in team_names:
-            final_team.append(p)
-            team_names.add(p['name'])
-
-    # Ensure we return exactly 11 players (or as many as available)
-    if len(final_team) < 11:
-        print(f"Warning: Only {len(final_team)} players selected. Need 11.")
-        # Try to add more from remaining predictions
-        remaining = [p for p in predictions if p['name'] not in team_names]
-        for p in remaining:
-            if len(final_team) >= 11: break
-            final_team.append(p)
-            team_names.add(p['name'])
-
-    # Format response - only include name and role
-    formatted_team = [{'name': p['name'], 'role': p['role']} for p in final_team]
-    
-    # Save generated team to database
-    try:
-        team_name = f"{opposition} vs {match_type} - {pitch} Pitch ({weather})"
-        generated_team = GeneratedBestXITeam(
-            team_name=team_name,
-            opposition=opposition,
-            pitch_type=pitch,
-            weather=weather,
-            match_type=match_type,
-            players_json=json.dumps(formatted_team)
-        )
-        db.session.add(generated_team)
-        db.session.commit()
-        print(f"Saved generated team to database: {team_name}")
+        return df_agg
     except Exception as e:
-        print(f"Error saving team to database: {e}")
-        db.session.rollback()
-    
-    print(f"Generated Best XI: {len(formatted_team)} players for {opposition} on {pitch} pitch ({weather} weather, {match_type} match)")
-    
-    return jsonify(formatted_team)
+        print(f"Data Load Error: {e}")
+        return pd.DataFrame()
 
-# --- ML-BASED BEST XI GENERATION ---
-@best_xi_bp.route('/api/best-xi/generate-ml', methods=['GET'])
-def generate_best_xi_ml():
-    """Generate Best XI using ML model predictions"""
+def select_team_logic(df_predict, pitch_type, match_format):
+    """Applies selection rules for both formats"""
+    # Sort by score
+    df_select = df_predict.sort_values(by='Predicted_Score', ascending=False)
     
-    opposition = request.args.get('opposition')
-    pitch_type = request.args.get('pitch_type')
-    weather = request.args.get('weather')
+    # Normalize Roles
+    df_select['Role'] = df_select['main_role'].replace({
+        'bat': 'Batsman', 'bowler': 'Bowler', 
+        'batting alrounder': 'Allrounder', 'bowling alrounder': 'Allrounder', 
+        'keeper': 'Wicket Keeper', 'wk batsman': 'Wicket Keeper', 'all_rounder': 'Allrounder',
+        'spin bowler': 'Bowler', 'pace bowler': 'Bowler'
+    })
     
-    if not all([opposition, pitch_type, weather]):
-        return jsonify({"error": "Missing parameters: opposition, pitch_type, weather"}), 400
+    df_select['is_spinner'] = df_select['Bowling_Style'].str.contains('spin|off|leg', case=False)
+    df_select['is_pacer'] = df_select['Bowling_Style'].str.contains('fast|medium|pace', case=False)
+
+    # Define Rules based on Pitch & Format
+    pitch_type_new = str(pitch_type).lower()
     
-    if not data_loader.model:
-        return jsonify({"error": "ML model not loaded"}), 500
-    
-    if data_loader.df_players_ml.empty:
-        return jsonify({"error": "Player dataset not loaded"}), 500
-    
+    if match_format == 'T20':
+        # T20 Logic - More Allrounders
+        if "batting" in pitch_type_new: 
+            comp = {'wk':1, 'bat':3, 'ar':4, 'spin':1, 'pace':2}
+        elif "spin" in pitch_type_new: 
+            comp = {'wk':1, 'bat':3, 'ar':3, 'spin':2, 'pace':2}
+        else: 
+            comp = {'wk':1, 'bat':4, 'ar':3, 'spin':1, 'pace':2}
+            
+    else:
+        # ODI Logic - UPDATED WITH YOUR RULES
+        if pitch_type_new == "batting": 
+            comp = {'wk':1, 'bat':4, 'ar':3, 'spin':1, 'pace':2}
+        elif pitch_type_new == "pace=bowling friendly": 
+            comp = {'wk':1, 'bat':3, 'ar':2, 'spin':1, 'pace':3}
+        elif pitch_type_new == "spin": 
+            comp = {'wk':1, 'bat':3, 'ar':2, 'spin':3, 'pace':2}
+        elif pitch_type_new == "balanced": 
+            comp = {'wk':1, 'bat':4, 'ar':3, 'spin':1, 'pace':2}
+        else: 
+            comp = {'wk':1, 'bat':4, 'ar':3, 'spin':1, 'pace':2}
+
+    # Selection Loop
+    result = []
+    temp_df = df_select.copy()
+    execution_order = ['wk', 'bat', 'ar', 'spin', 'pace']
+
+    for role_type in execution_order:
+        candidates = pd.DataFrame()
+        count = comp.get(role_type, 2)
+
+        if role_type == 'wk': candidates = temp_df[temp_df['Role'].str.contains('keeper', case=False)]
+        elif role_type == 'bat': candidates = temp_df[temp_df['Role'].str.contains('batsman', case=False)]
+        elif role_type == 'ar': candidates = temp_df[temp_df['Role'].str.contains('allrounder', case=False)]
+        elif role_type == 'spin': candidates = temp_df[temp_df['is_spinner']]
+        elif role_type == 'pace': candidates = temp_df[temp_df['is_pacer']]
+        
+        candidates = candidates.sort_values(by='Predicted_Score', ascending=False)
+
+        if not candidates.empty:
+            selected = candidates.head(count)
+            result.extend(selected.to_dict('records'))
+            temp_df = temp_df.drop(selected.index)
+
+    # Fill remaining to reach 11
+    unique_result = []
+    seen = set()
+    for d in result:
+        if d['Player_Name'] not in seen:
+            unique_result.append(d)
+            seen.add(d['Player_Name'])
+            
+    if len(unique_result) < 11:
+        req = 11 - len(unique_result)
+        existing = [p['Player_Name'] for p in unique_result]
+        pool = temp_df[~temp_df['Player_Name'].isin(existing)]
+        padding = pool.sort_values(by='Predicted_Score', ascending=False).head(req)
+        unique_result.extend(padding.to_dict('records'))
+
+    return unique_result[:11]
+
+# --- MAIN API ENDPOINT ---
+
+@best_xi_bp.route('/api/predict-team', methods=['POST'])
+def predict_team():
     try:
-        # Get unique players - handle different column names
-        df = data_loader.df_players_ml.copy()
-        
-        # Find the player name column
-        player_col = None
-        for col in ['Player_Name', 'player_name', 'Player Name']:
-            if col in df.columns:
-                player_col = col
-                break
-        
-        if not player_col:
-            # Use first column as player names
-            player_col = df.columns[0]
-        
-        # Find the role column
-        role_col = None
-        for col in ['main_role', 'Role', 'role', 'position']:
-            if col in df.columns:
-                role_col = col
-                break
-        
-        if not role_col:
-            # Create a default role column based on first available data
-            df['role'] = 'batting'
-            role_col = 'role'
-        
-        # Get unique players
-        unique_players = df[[player_col, role_col]].drop_duplicates(subset=[player_col])
-        
-        predictions = []
-        
-        # Get predictions for each player
-        for _, row in unique_players.iterrows():
-            player_name = row[player_col]
-            player_role = str(row[role_col]).lower() if pd.notna(row[role_col]) else 'batting'
+        data = request.json
+        print(f"🔮 Request: {data}")
+
+        match_type = data.get('match_type', 'ODI')
+        pitch_type = data.get('pitch_type', 'balanced')
+        weather = data.get('weather', 'clear')
+        opposition = data.get('opposition', 'India')
+
+        # 1. Load Data
+        df_data = get_player_data(match_type)
+        if df_data.empty:
+            return jsonify({"status": "error", "message": f"No data for {match_type}"}), 404
+
+        # 2. Prepare Inputs
+        df_data['Pitch_Type'] = str(pitch_type)
+        df_data['weather'] = str(weather)
+        df_data['Opposition'] = str(opposition)
+        df_data['main_role'] = df_data['main_role'].fillna('Unknown').astype(str)
+        df_data['Bowling_Style'] = df_data['Bowling_Style'].fillna('None').astype(str)
+
+        # 3. Run Prediction based on Format
+        if match_type == 'ODI':
+            if odi_model is None: return jsonify({"status":"error", "message":"ODI Model Missing"}), 500
             
-            # Call the prediction helper
-            result = data_loader.predict_player_scores(
-                opposition, pitch_type, weather, player_name, player_role
-            )
+            features = ['main_role', 'Pitch_Type', 'weather', 'Opposition', 'Bowling_Style',
+                        'Avg_Batting_Runs', 'Avg_Wicket_taken', 'Avg_SR', 'Avg_Econ', 'Avg_Fours', 'Avg_Sixes']
+            preds = odi_model.predict(df_data[features])
+            df_data['Predicted_Score'] = preds[:, 0] + preds[:, 1]
+
+        elif match_type == 'T20':
+            if t20_model is None: return jsonify({"status":"error", "message":"T20 Model Missing"}), 500
             
-            if result is None:
-                continue
-            
-            batting_score, bowling_score = result
-            
-            # Determine role category
-            role_category = 'Batsman'
-            if player_name in data_loader.WICKET_KEEPER_NAMES:
-                role_category = 'Wicket Keeper'
-            elif player_name in data_loader.ALL_ROUNDER_NAMES:
-                role_category = 'All-Rounder'
-            elif 'bowl' in player_role.lower():
-                role_category = 'Bowler'
-            
-            predictions.append({
-                'player_name': player_name,
-                'player_type': player_role,
-                'role': role_category,
-                'batting_score': float(batting_score),
-                'bowling_score': float(bowling_score),
-                'combined_score': float(batting_score + bowling_score)
+            num_features = ['Avg_Batting_Runs', 'Avg_Wicket_taken', 'Avg_SR', 'Avg_Econ', 'Avg_Fours', 'Avg_Sixes']
+            dtest = xgb.DMatrix(df_data[num_features])
+            preds = t20_model.predict(dtest)
+            df_data['Predicted_Score'] = preds
+
+        else:
+            return jsonify({"status":"error", "message":"Invalid Format"}), 400
+
+        # 4. Select Team
+        final_team = select_team_logic(df_data, pitch_type, match_type)
+
+        # 5. Response
+        response_team = []
+        for p in final_team:
+            response_team.append({
+                "player_name": p['Player_Name'],
+                "role": p.get('Role', 'Unknown'),
+                "predicted_score": round(float(p.get('Predicted_Score', 0)), 2)
             })
-        
-        if not predictions:
-            return jsonify({"error": "No predictions generated"}), 400
-        
-        # Sort by combined score
-        predictions.sort(key=lambda x: x['combined_score'], reverse=True)
-        
-        # Select 11-player team
-        team = []
-        added_players = set()
-        role_counts = {'Wicket Keeper': 0, 'Batsman': 0, 'All-Rounder': 0, 'Bowler': 0}
-        
-        # Try to get 1 WK, 4 Bat, 3 AR, 3 Bowl
-        for pred in predictions:
-            if len(team) >= 11:
-                break
-            
-            role = pred['role']
-            
-            # Check role limits
-            if role == 'Wicket Keeper' and role_counts[role] >= 1:
-                continue
-            elif role == 'Batsman' and role_counts[role] >= 4:
-                continue
-            elif role == 'All-Rounder' and role_counts[role] >= 3:
-                continue
-            elif role == 'Bowler' and role_counts[role] >= 3:
-                continue
-            
-            if pred['player_name'] not in added_players:
-                team.append(pred)
-                added_players.add(pred['player_name'])
-                role_counts[role] += 1
-        
-        # If we need more, add remaining top predictions without role limits
-        if len(team) < 11:
-            for pred in predictions:
-                if len(team) >= 11:
-                    break
-                if pred['player_name'] not in added_players:
-                    team.append(pred)
-                    added_players.add(pred['player_name'])
-        
+
         return jsonify({
             "status": "success",
-            "opposition": opposition,
-            "pitch_type": pitch_type,
-            "weather": weather,
-            "team": team[:11],
-            "team_count": len(team),
-            "generated_at": pd.Timestamp.now().isoformat()
-        }), 200
-        
+            "match_details": { "format": match_type },
+            "team": response_team
+        })
+
     except Exception as e:
-        print(f"Error in ML generation: {e}")
-        import traceback
+        print(f"Server Error: {e}")
         traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# --- DROPDOWNS ---
+@best_xi_bp.route('/api/ml/match-types', methods=['GET'])
+def get_match_types(): return jsonify(["ODI", "T20"])
+
+@best_xi_bp.route('/api/ml/oppositions', methods=['GET'])
+def get_ml_oppositions(): return jsonify(["India", "Australia", "England", "New Zealand", "Pakistan", "South Africa", "Bangladesh", "West Indies", "Afghanistan"])
+
+@best_xi_bp.route('/api/ml/pitch-types', methods=['GET'])
+def get_ml_pitch_types(): return jsonify(["Batting Friendly", "Bowling Friendly", "Spin Friendly", "Balanced"])
+
+@best_xi_bp.route('/api/ml/weather-conditions', methods=['GET'])
+def get_ml_weather_conditions(): return jsonify(["dry", "hot", "cloudy", "humid"])
