@@ -3,12 +3,13 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
 // Components and Pages
 import Navbar from './components/Navbar';
+import Footer from './components/Footer';
 import HomePage from './pages/HomePage';
-import BattingPerformancePage from './pages/BattingPerformancePage'; 
+import BattingPerformancePage from './pages/BattingPerformancePage';
 import BowlingPerformancePage from './pages/BowlingPerformancePage';
 import BestXISelectionPage from './pages/BestXISelectionPage';
 import ManageDatasetPage from './pages/ManageDatasetPage';
-import './App.css'; 
+import './App.css';
 
 function App() {
   return (
@@ -22,9 +23,10 @@ function App() {
             <Route path="/bowling-performance" element={<BowlingPerformancePage />} />
             <Route path="/best-11-suggestion" element={<BestXISelectionPage />} />
             <Route path="/manage-dataset" element={<ManageDatasetPage />} />
-          
+
           </Routes>
         </main>
+        <Footer />
       </div>
     </Router>
   );

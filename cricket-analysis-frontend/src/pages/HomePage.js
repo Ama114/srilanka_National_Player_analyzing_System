@@ -66,7 +66,7 @@ function HomePage() {
           ))}
         </div>
         <div className="hero-content">
-          <h1>Sri Lanka National Cricket Analysis Dashboard</h1>
+          <h1>Sri Lanka National Cricket Analysis System</h1>
           <p className="hero-subtitle">{activeMatchType} Format - Comprehensive Player Performance Analysis</p>
           <p>The ultimate platform for in-depth player analysis, performance tracking, and AI-powered team suggestions.</p>
         </div>
@@ -132,22 +132,7 @@ function HomePage() {
         </div>
       </section>
 
-      {/* --- 4. Video Section --- */}
-      <section className="video-section-container">
-        <div className="video-content">
-          <h2>See Our Project in Action</h2>
-          <p>Watch a quick overview of how our platform works, from in-depth analysis to our powerful machine learning model that suggests the perfect team for any condition.</p>
-          <Link to="/best-11-suggestion" className="portal-button">Try the ML Model</Link>
-        </div>
-        <div className="video-player">
-          <iframe 
-            src="https://www.youtube.com/embed/nC4-5I-8__A"
-            title="Project Demo Video" 
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-            allowFullScreen>
-          </iframe>
-        </div>
-      </section>
+       
     </div>
   );
 }

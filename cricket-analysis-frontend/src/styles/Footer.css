@@ -1,7 +1,89 @@
 .site-footer {
-  background-color: #343a40; /* Dark Grey */
-  color: #adb5bd; /* Light Grey */
+  background-color: #1a1a1a;
+  color: #f1f1f1;
+  padding: 40px 0 20px;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  box-shadow: 0 -2px 10px rgba(0,0,0,0.3);
+  margin-top: auto; /* Pushes footer to bottom if page content is short */
+}
+
+.footer-content {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-around;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+.footer-section {
+  flex: 1;
+  margin-bottom: 20px;
+  min-width: 250px;
+}
+
+.footer-section h3 {
+  color: #ffcc00; /* Sri Lanka Cricket gold/yellow accent */
+  margin-bottom: 15px;
+  font-size: 1.2rem;
+  border-bottom: 2px solid #ffcc00;
+  display: inline-block;
+  padding-bottom: 5px;
+}
+
+.footer-section p {
+  line-height: 1.6;
+  color: #ccc;
+}
+
+.footer-section ul {
+  list-style: none;
+  padding: 0;
+}
+
+.footer-section ul li {
+  margin-bottom: 10px;
+}
+
+.footer-section ul li a {
+  color: #ccc;
+  text-decoration: none;
+  transition: color 0.3s ease;
+}
+
+.footer-section ul li a:hover {
+  color: #ffcc00;
+  padding-left: 5px;
+}
+
+.footer-bottom {
   text-align: center;
-  padding: 20px;
-  width: 100%;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid #444;
+  font-size: 0.9rem;
+  color: #888;
+}
+
+/* Ensure the footer stays at the bottom of the viewport even with little content */
+body {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+#root {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+.App {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+}
+
+.main-content {
+    flex: 1;
 }

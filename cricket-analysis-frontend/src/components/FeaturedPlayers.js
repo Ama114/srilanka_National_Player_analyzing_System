@@ -1,7 +1,7 @@
 import React from 'react';
 import '../styles/FeaturedPlayers.css';
 
-// ක්‍රීඩකයන්ගේ photos import කරගන්න
+//  photos import
 import waninduImg from '../assets/images/wanindu.jpg';
 import matheeshaImg from '../assets/images/pathum.jpg';
 import sadeeraImg from '../assets/images/sadeera.jpg';

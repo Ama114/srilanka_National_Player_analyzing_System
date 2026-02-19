@@ -11,7 +11,7 @@ const PlayerCard = ({ player, index, color }) => (
     </div>
     <div className="player-avatar">
       <div className="avatar-circle" style={{ borderColor: color, color: color }}>
-        {player.player_name.charAt(0)}
+        {player.player_name ? player.player_name.charAt(0) : '?'}
       </div>
     </div>
     <div className="player-info">
@@ -21,22 +21,27 @@ const PlayerCard = ({ player, index, color }) => (
       </div>
       <div className="stats-row">
         <span className="score-label">Rating:</span>
-        <span className="score-value" style={{ color: color }}>{player.predicted_score}</span>
+        <span className="score-value" style={{ color: color }}>
+            {player.predicted_score}
+        </span>
       </div>
     </div>
   </div>
 );
 
 function BestXISelectionPage() {
+  // State
   const [matchType, setMatchType] = useState('');
   const [opposition, setOpposition] = useState('');
   const [pitchType, setPitchType] = useState('');
   const [weather, setWeather] = useState('');
   
-  const [matchTypes, setMatchTypes] = useState([]);
-  const [oppositions, setOppositions] = useState([]);
-  const [pitchTypes, setPitchTypes] = useState([]);
-  const [weatherTypes, setWeatherTypes] = useState([]);
+  const [dropdownOptions, setDropdownOptions] = useState({
+      matchTypes: [],
+      oppositions: [],
+      pitchTypes: [],
+      weatherTypes: []
+  });
   
   const [bestTeam, setBestTeam] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -44,28 +49,43 @@ function BestXISelectionPage() {
   
   const API_BASE_URL = 'http://127.0.0.1:5000/api';
 
+  // --- 1. OPTIMIZED DATA FETCHING (Promise.all) ---
   useEffect(() => {
-    const fetchDropdownData = async () => {
+    const fetchAllDropdowns = async () => {
       try {
-        const matchRes = await axios.get(`${API_BASE_URL}/ml/match-types`);
-        setMatchTypes(matchRes.data);
-        const oppRes = await axios.get(`${API_BASE_URL}/ml/oppositions`);
-        setOppositions(oppRes.data);
-        const pitchRes = await axios.get(`${API_BASE_URL}/ml/pitch-types`);
-        setPitchTypes(pitchRes.data);
-        const weatherRes = await axios.get(`${API_BASE_URL}/ml/weather-conditions`);
-        setWeatherTypes(weatherRes.data);
+        // API Calls 4ම එකවර යවයි (Parallel Requests)
+        const [matchRes, oppRes, pitchRes, weatherRes] = await Promise.all([
+            axios.get(`${API_BASE_URL}/ml/match-types`),
+            axios.get(`${API_BASE_URL}/ml/oppositions`),
+            axios.get(`${API_BASE_URL}/ml/pitch-types`),
+            axios.get(`${API_BASE_URL}/ml/weather-conditions`)
+        ]);
+
+        setDropdownOptions({
+            matchTypes: matchRes.data,
+            oppositions: oppRes.data,
+            pitchTypes: pitchRes.data,
+            weatherTypes: weatherRes.data
+        });
+
       } catch (err) {
         console.error('Error loading data:', err);
-        setError('Failed to load options. Is backend running?');
+        setError('Failed to load dropdown options. Check Backend.');
       }
     };
-    fetchDropdownData();
+    fetchAllDropdowns();
   }, []);
 
+  // --- 2. INPUT CHANGE HANDLERS (Clear Team on Change) ---
+  const handleMatchChange = (e) => { setMatchType(e.target.value); setBestTeam([]); };
+  const handleOppChange = (e) => { setOpposition(e.target.value); setBestTeam([]); };
+  const handlePitchChange = (e) => { setPitchType(e.target.value); setBestTeam([]); };
+  const handleWeatherChange = (e) => { setWeather(e.target.value); setBestTeam([]); };
+
+  // --- 3. TEAM GENERATION LOGIC ---
   const generateBestXI = async () => {
     if (!opposition || !pitchType || !weather || !matchType) {
-      setError('Please select all fields.');
+      setError('Please select all 4 conditions to generate a team.');
       return;
     }
     setLoading(true);
@@ -81,84 +101,109 @@ function BestXISelectionPage() {
       });
 
       if (response.data.status === 'success') {
-        setBestTeam(response.data.team);
-        if (response.data.team.length === 0) setError('No suitable players found.');
+        setBestTeam(response.data.team || []);
+        if (response.data.team.length === 0) {
+            setError('No players found in database matching criteria.');
+        }
       } else {
         setError(response.data.message || 'Error generating team.');
       }
     } catch (err) {
-      setError(err.response?.data?.message || 'Server connection error.');
+      console.error(err);
+      setError(err.response?.data?.message || 'Server connection failed.');
     } finally {
       setLoading(false);
     }
   };
 
+  // --- 4. IMPROVED COLOR LOGIC (Including TEST) ---
   const getRoleColor = (role) => {
     if (!role) return '#999';
     const r = role.toLowerCase();
-    if (r.includes('keeper')) return matchType === 'T20' ? '#FF9800' : '#FFC107';
+
+    // TEST Match Colors (Classic Red/White vibe)
+    if (matchType === 'TEST') {
+        if (r.includes('keeper')) return '#D32F2F'; // Red
+        if (r.includes('batsman')) return '#388E3C'; // Green
+        if (r.includes('bowler')) return '#C62828'; // Dark Red
+        return '#1976D2'; // All Rounder Blue
+    }
+
+    // T20 Colors (Vibrant)
+    if (matchType === 'T20') {
+        if (r.includes('keeper')) return '#FF9800';
+        if (r.includes('batsman')) return '#00E676';
+        if (r.includes('bowler')) return '#F50057';
+        return '#651FFF';
+    }
+
+    // ODI Colors (Standard)
+    if (r.includes('keeper')) return '#FFC107';
     if (r.includes('batsman')) return '#4CAF50';
-    if (r.includes('bowler')) return matchType === 'T20' ? '#E91E63' : '#F44336';
-    if (r.includes('all')) return matchType === 'T20' ? '#673AB7' : '#9C27B0';
-    return '#607D8B';
+    if (r.includes('bowler')) return '#F44336';
+    return '#9C27B0';
   };
 
   return (
     <div className="selection-page-container">
-      <h1>Best XI Selection</h1>
-      <p className="subtitle">AI-Powered Team Prediction</p>
+      <h1>Best XI Selector</h1>
+      <p className="subtitle">AI-Powered Team Prediction System</p>
 
+      {/* --- INPUT SECTION --- */}
       <div className="condition-selector">
         <div className="form-group">
           <label>Match Format</label>
-          <select value={matchType} onChange={(e) => setMatchType(e.target.value)}>
+          <select value={matchType} onChange={handleMatchChange}>
              <option value="">Select Format</option>
-            {matchTypes.map(t => <option key={t} value={t}>{t}</option>)}
+            {dropdownOptions.matchTypes.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
         <div className="form-group">
           <label>Opposition</label>
-          <select value={opposition} onChange={(e) => setOpposition(e.target.value)}>
+          <select value={opposition} onChange={handleOppChange}>
             <option value="">Select Opposition</option>
-            {oppositions.map(o => <option key={o} value={o}>{o}</option>)}
+            {dropdownOptions.oppositions.map(o => <option key={o} value={o}>{o}</option>)}
           </select>
         </div>
         <div className="form-group">
-          <label>Pitch</label>
-          <select value={pitchType} onChange={(e) => setPitchType(e.target.value)}>
+          <label>Pitch Condition</label>
+          <select value={pitchType} onChange={handlePitchChange}>
              <option value="">Select Pitch</option>
-            {pitchTypes.map(p => <option key={p} value={p}>{p}</option>)}
+            {dropdownOptions.pitchTypes.map(p => <option key={p} value={p}>{p}</option>)}
           </select>
         </div>
         <div className="form-group">
           <label>Weather</label>
-          <select value={weather} onChange={(e) => setWeather(e.target.value)}>
+          <select value={weather} onChange={handleWeatherChange}>
              <option value="">Select Weather</option>
-            {weatherTypes.map(w => <option key={w} value={w}>{w}</option>)}
+            {dropdownOptions.weatherTypes.map(w => <option key={w} value={w}>{w}</option>)}
           </select>
         </div>
         <button onClick={generateBestXI} disabled={loading} className="suggest-btn">
-          {loading ? 'Analyzing...' : 'Generate Best XI'}
+          {loading ? 'Analyzing Data...' : 'Generate Best XI'}
         </button>
       </div>
 
+      {/* --- STATUS MESSAGES --- */}
       {error && <div className="error-message">⚠️ {error}</div>}
-      {loading && <div className="skeleton-loader"><div className="spinner"></div><p>Processing...</p></div>}
-
+      
+      {/* --- RESULTS SECTION --- */}
       {!loading && bestTeam.length > 0 && (
         <div className="team-display-container">
           <div className="results-header">
-            <h2 style={{ color: matchType === 'T20' ? '#E65100' : '#1565C0' }}>
-              {matchType} Recommended XI
+            <h2 style={{ color: matchType === 'T20' ? '#E65100' : (matchType === 'TEST' ? '#D32F2F' : '#1565C0') }}>
+              {matchType} Squad vs {opposition}
             </h2>
-            <span className="badge">vs {opposition}</span>
+            <span className="badge">{pitchType} Pitch</span>
           </div>
           
           <div className="field-formation" style={{ 
             background: matchType === 'T20' 
               ? 'linear-gradient(135deg, #263238 0%, #37474F 100%)' 
-              : 'linear-gradient(135deg, #4caf50 0%, #2e7d32 100%)',
-            borderColor: matchType === 'T20' ? '#E65100' : '#4caf50'
+              : (matchType === 'TEST' ? 'linear-gradient(135deg, #ffffff 0%, #f0f0f0 100%)' : 'linear-gradient(135deg, #4caf50 0%, #2e7d32 100%)'),
+            borderColor: matchType === 'T20' ? '#E65100' : (matchType === 'TEST' ? '#D32F2F' : '#4caf50'),
+            borderWidth: '2px',
+            borderStyle: 'solid'
           }}>
             <div className="players-grid">
                {bestTeam.map((player, index) => (

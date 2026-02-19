@@ -85,7 +85,7 @@ function BowlingPerformancePage() {
       setIsLoading(false);
     }
   };
-  
+
   // Image eka nethnam default image eka load karana function eka
   const handleImageError = (e) => {
     e.target.src = '/images/players/default-avatar.png';
@@ -120,9 +120,9 @@ function BowlingPerformancePage() {
       }
     }
     if (!playerFromUrl) {
-        setSelectedPlayer('');
-        setSelectedGround('');
-        setStats(null);
+      setSelectedPlayer('');
+      setSelectedGround('');
+      setStats(null);
     }
   }, [location.search, players, selectedPlayer]);
 
@@ -140,7 +140,7 @@ function BowlingPerformancePage() {
     <div className="performance-page-container">
       <h1>Player Bowling Performance by Ground</h1>
       <p className="subtitle">Select a player and a ground to see detailed bowling statistics.</p>
-      
+
       <div className="selection-container">
         <select value={matchType} onChange={handleMatchTypeChange}>
           {MATCH_TYPES.map(type => (
@@ -162,29 +162,29 @@ function BowlingPerformancePage() {
       </div>
 
       {error && <p className="error-message">{error}</p>}
-      
+
       {isLoading && !stats && <div className="skeleton-loader"></div>}
 
       {/* --- Aluth [Image | Stats] Layout eka --- */}
       {stats && !isLoading && (
         <div className="results-container">
-          
+
           <div className="results-header">
             <h2>{selectedPlayer}</h2>
             <p>{selectedGround}</p>
           </div>
 
           <div className="results-layout-container">
-            
+
             {/* Wam paththa: Player Image eka */}
             <div className="player-image-section">
-              <img 
-                src={`/images/players/${selectedPlayer}.png`} 
+              <img
+                src={`/images/players/${selectedPlayer}.png`}
                 alt={selectedPlayer}
                 onError={handleImageError} // Image eka nethnam
               />
             </div>
-            
+
             {/* Dakunu paththa: Stats tika */}
             <div className="stats-section">
               <h3>Key Statistics</h3>

@@ -1,121 +1,173 @@
 from flask import Blueprint, jsonify, request
-from models import db, PlayerPerformanceRecord
+from models import db, ODIPerformance, T20Performance, TestPerformance
 from sqlalchemy.exc import SQLAlchemyError
-import data_loader
+from datetime import datetime
 
 dataset_bp = Blueprint('dataset', __name__)
 
-@dataset_bp.route('/api/dataset/check-condition', methods=['GET'])
-def check_condition_in_dataset():
-    player_name = request.args.get('player_name')
-    opposition = request.args.get('opposition')
-    pitch = request.args.get('pitch')
-    weather = request.args.get('weather')
-    
-    if not all([player_name, opposition, pitch, weather]):
-        return jsonify({"error": "All parameters required"}), 400
-    
-    try:
-        condition_exists = PlayerPerformanceRecord.query.filter_by(
-            player_name=player_name,
-            opponent_team=opposition,
-            pitch_type=pitch,
-            weather=weather
-        ).first() is not None
-        return jsonify({"exists": bool(condition_exists)}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
+# ----------------------------------------------------------------
+# 1. ADD RECORD (ODI, T20 සහ TEST තුනටම)
+# ----------------------------------------------------------------
 @dataset_bp.route('/api/dataset/add-record', methods=['POST'])
-def add_dataset_record():
+def add_record():
     data = request.get_json() or {}
-    required = ['Player_Name', 'Player_Type', 'Opponent_Team', 'Pitch_Type', 'Weather']
-    if not all(f in data for f in required):
-        return jsonify({"error": "Missing required fields"}), 400
+    # match_type එක කැපිටල් අකුරෙන් ලබා ගැනීම (Error මගහැරීමට)
+    match_type = data.get('match_type', 'ODI').upper()
     
     try:
-        
-        new_record = PlayerPerformanceRecord(
-            player_name=data['Player_Name'],
-            player_type=data.get('Player_Type', 'Batsman'),
-            role=data.get('Role', data.get('Player_Type', 'Batsman')),
-            runs=int(data.get('Runs', 0)),
-            balls_faced=int(data.get('Balls_Faced', 0)),
-            strike_rate=float(data.get('Strike_Rate', 0.0)),
-            wickets_taken=int(data.get('Wickets_Taken', 0)),
-            overs_bowled=float(data.get('Overs_Bowled', 0.0)),
-            runs_conceded=int(data.get('Runs_Conceded', 0)),
-            opponent_team=data['Opponent_Team'],
-            pitch_type=data['Pitch_Type'],
-            weather=data['Weather']
-        )
-        
+        # Date string එක Python Date object එකකට හැරවීම
+        m_date = None
+        if data.get('date'):
+            m_date = datetime.strptime(data['date'], '%Y-%m-%d').date()
+
+        if match_type == 'ODI':
+            new_record = ODIPerformance(
+                match_type='ODI',
+                date=m_date,
+                opposition=data.get('opposition'),
+                ground=data.get('ground'),
+                pitch_type=data.get('pitch_type'),
+                weather=data.get('weather'),
+                player_name=data.get('player_name'),
+                main_role=data.get('main_role'),
+                batting_style=data.get('batting_style'),
+                bowling_style=data.get('bowling_style'),
+                batting_runs=int(data.get('batting_runs', 0)),
+                bf=int(data.get('bf', 0)),
+                fours=int(data.get('fours', 0)),
+                sixes=int(data.get('sixes', 0)),
+                sr=float(data.get('sr', 0.0)),
+                bat_position=int(data.get('bat_position', 0)) if data.get('bat_position') else None,
+                dismissal=data.get('dismissal', 'Not Out'),
+                overs=float(data.get('overs', 0.0)),
+                mdns=int(data.get('mdns', 0)),
+                runs_conceded=int(data.get('runs_conceded', 0)),
+                wicket_taken=int(data.get('wicket_taken', 0)),
+                econ=float(data.get('econ', 0.0)),
+                bowling_pos=int(data.get('bowling_pos', 0)) if data.get('bowling_pos') else None
+            )
+        elif match_type == 'T20':
+            new_record = T20Performance(
+                match_type='T20',
+                date=m_date,
+                opposition=data.get('opposition'),
+                ground=data.get('ground'),
+                pitch_type=data.get('pitch_type'),
+                weather=data.get('weather'),
+                player_name=data.get('player_name'),
+                main_role=data.get('main_role'),
+                batting_style=data.get('batting_style'),
+                bowling_style=data.get('bowling_style'),
+                runs=int(data.get('runs', 0)),
+                balls_faced=int(data.get('balls_faced', 0)),
+                fours=int(data.get('fours', 0)),
+                sixes=int(data.get('sixes', 0)),
+                strike_rate=float(data.get('strike_rate', 0.0)),
+                average=float(data.get('average', 0.0)),
+                bat_position=int(data.get('bat_position', 0)) if data.get('bat_position') else None,
+                dismissal=data.get('dismissal', 'Not Out'),
+                wickets=int(data.get('wickets', 0)),
+                overs=float(data.get('overs', 0.0)),
+                maidens=int(data.get('maidens', 0)),
+                runs_conceded=int(data.get('runs_conceded', 0)),
+                economy=float(data.get('economy', 0.0)),
+                bowling_pos=int(data.get('bowling_pos', 0)) if data.get('bowling_pos') else None,
+                notes=data.get('notes', '')
+            )
+        elif match_type == 'TEST':
+            new_record = TestPerformance(
+                match_type='Test',
+                date=m_date,
+                opposition=data.get('opposition'),
+                ground=data.get('ground'),
+                pitch_type=data.get('pitch_type'),
+                weather=data.get('weather'),
+                player_name=data.get('player_name'),
+                main_role=data.get('main_role'),
+                batting_style=data.get('batting_style'),
+                bowling_style=data.get('bowling_style'),
+                runs=int(data.get('runs', 0)),
+                balls_faced=int(data.get('balls_faced', 0)),
+                fours=int(data.get('fours', 0)),
+                sixes=int(data.get('sixes', 0)),
+                strike_rate=float(data.get('strike_rate', 0.0)),
+                average=float(data.get('average', 0.0)),
+                bat_position=int(data.get('bat_position', 0)) if data.get('bat_position') else None,
+                dismissal=data.get('dismissal', 'Not Out'),
+                wickets=int(data.get('wickets', 0)),
+                overs=float(data.get('overs', 0.0)),
+                maidens=int(data.get('maidens', 0)),
+                runs_conceded=int(data.get('runs_conceded', 0)),
+                economy=float(data.get('economy', 0.0)),
+                bowling_pos=int(data.get('bowling_pos', 0)) if data.get('bowling_pos') else None,
+                notes=data.get('notes', '')
+            )
+
         db.session.add(new_record)
         db.session.commit()
-        return jsonify({"message": "Record added", "record": new_record.to_dict()}), 201
-        
-    except SQLAlchemyError as e:
+        return jsonify({"message": f"{match_type} Record added successfully!"}), 201
+
+    except Exception as e:
         db.session.rollback()
+        print(f"Dataset Save Error: {e}")
         return jsonify({"error": str(e)}), 500
 
-@dataset_bp.route('/api/dataset/update-record', methods=['PUT'])
-def update_dataset_record():
-    data = request.get_json() or {}
-    required = ['Player_Name', 'Opponent_Team', 'Pitch_Type', 'Weather']
-    if not all(f in data for f in required):
-        return jsonify({"error": "Missing identification fields"}), 400
+# ----------------------------------------------------------------
+# 2. CHECK EXISTENCE
+# ----------------------------------------------------------------
+@dataset_bp.route('/api/dataset/check-condition', methods=['GET'])
+def check_condition():
+    player_name = request.args.get('player_name')
+    opposition = request.args.get('opposition')
+    m_type = request.args.get('match_type', 'ODI').upper()
     
+    if m_type == 'ODI':
+        model = ODIPerformance
+    elif m_type == 'T20':
+        model = T20Performance
+    else:
+        model = TestPerformance
+        
+    exists = model.query.filter_by(player_name=player_name, opposition=opposition).first() is not None
+    return jsonify({"exists": exists}), 200
+
+# ----------------------------------------------------------------
+# 3. GET ALL RECORDS
+# ----------------------------------------------------------------
+@dataset_bp.route('/api/dataset/records', methods=['GET'])
+def list_records():
+    m_type = request.args.get('match_type', 'ODI').upper()
     try:
-        record = PlayerPerformanceRecord.query.filter_by(
-            player_name=data['Player_Name'],
-            opponent_team=data['Opponent_Team'],
-            pitch_type=data['Pitch_Type'],
-            weather=data['Weather']
-        ).first()
-        
-        if not record:
-            return jsonify({"error": "Record not found"}), 404
-        
-        if 'Runs' in data: record.runs = int(data['Runs'])
-        if 'Balls_Faced' in data: record.balls_faced = int(data['Balls_Faced'])
-        if 'Strike_Rate' in data: record.strike_rate = float(data['Strike_Rate'])
-        if 'Wickets_Taken' in data: record.wickets_taken = int(data['Wickets_Taken'])
-        if 'Overs_Bowled' in data: record.overs_bowled = float(data['Overs_Bowled'])
-        if 'Runs_Conceded' in data: record.runs_conceded = int(data['Runs_Conceded'])
-        
-        db.session.commit()
-        return jsonify({"message": "Record updated", "record": record.to_dict()}), 200
-    except SQLAlchemyError as e:
-        db.session.rollback()
+        if m_type == 'ODI':
+            model = ODIPerformance
+        elif m_type == 'T20':
+            model = T20Performance
+        else:
+            model = TestPerformance
+            
+        records = model.query.order_by(model.date.desc()).all()
+        return jsonify([r.to_dict() for r in records])
+    except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@dataset_bp.route('/api/dataset/records', methods=['GET'])
-def list_dataset_records():
-    records = PlayerPerformanceRecord.query.order_by(PlayerPerformanceRecord.created_at.desc()).all()
-    return jsonify([record.to_dict() for record in records])
-
+# ----------------------------------------------------------------
+# 4. DELETE RECORD
+# ----------------------------------------------------------------
 @dataset_bp.route('/api/dataset/records/<int:record_id>', methods=['DELETE'])
-def delete_dataset_record(record_id):
+def delete_record(record_id):
+    m_type = request.args.get('match_type', 'ODI').upper()
     try:
-        record = PlayerPerformanceRecord.query.get_or_404(record_id)
+        if m_type == 'ODI':
+            model = ODIPerformance
+        elif m_type == 'T20':
+            model = T20Performance
+        else:
+            model = TestPerformance
+            
+        record = model.query.get_or_404(record_id)
         db.session.delete(record)
         db.session.commit()
-        return jsonify({"message": "Record deleted"}), 200
-    except SQLAlchemyError as e:
-        db.session.rollback()
-        return jsonify({"error": str(e)}), 500
-
-# --- 6. Reload Dataset (for ML Model) ---
-@dataset_bp.route('/api/dataset/reload', methods=['POST'])
-def reload_dataset():
-    try:
-        # call the function in data_loader file
-        if data_loader.load_ml_dataset():
-            return jsonify({
-                "message": "Dataset reloaded successfully", 
-                "rows": len(data_loader.df_players_ml)
-            }), 200
-        else:
-            return jsonify({"error": "Failed to reload dataset"}), 500
+        return jsonify({"message": "Record deleted successfully!"}), 200
     except Exception as e:
+        db.session.rollback()
         return jsonify({"error": str(e)}), 500
